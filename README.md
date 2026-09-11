@@ -28,6 +28,46 @@ allowed to be more complicated than it needs to be:
 
 `npm test` covers all of this, including the sign convention, and gates deployment.
 
+## What each sensor is for
+
+**The pad sensor decides when she hit.** An accelerometer is physically immune to the two
+hardest problems here — the metronome bleeding out of the speaker, and a noisy room —
+and needs no per-room tuning at all. On the real tablet it finds her notes with about
+30 ms of spread, comfortably inside a beginner's own.
+
+**The microphone scores nothing.** It keeps two jobs the pad cannot do:
+
+1. **Measuring how late everything is.** Its own click, heard coming back, is the only
+   objective latency reference available. Without one, "never tell an on-time child she
+   is late" is a hope rather than a property. This has been completely reliable
+   throughout — every run, steady to a fraction of a millisecond — while microphone
+   *detection* caused nearly every bug in this project.
+2. **Standing in when there is no pad sensor**, such as on a laptop.
+
+### Getting the pad's correction right
+
+The two sensors need *different* corrections, and sharing one cost 215 ms: the microphone
+round trip includes the time for sound to travel INTO the device, and a wrist has no such
+path. Applying the mic's number to a pad hit made the app think she was early, and she
+compensated by hitting a third of a beat late.
+
+Three measurements are available, and together they over-determine the answer:
+
+| | what it is | how it's obtained |
+| --- | --- | --- |
+| `L` | mic round trip = out + in | the app's own click, heard back |
+| `D_tap` | pad reporting delay | tap the screen: one event, two sensors, no human timing involved |
+| `D_cross` | pad − mic on a real strike | a stick hit is heard *and* felt |
+
+Since `D_cross = padDelay − inLat`, the exact answer is **`K_pad = L + D_cross`** — the tap
+term cancels entirely. That version is preferred whenever the microphone has heard enough
+of her strikes, and it is also the only one free of the shape mismatch between a finger on
+glass and a stick on rubber.
+
+When the microphone hears nothing, it falls back to the tap measurement plus an estimate
+of the output half. Checked against a real session that lands within 7 ms of what her
+playing needed, against 215 ms for the old behaviour.
+
 ## Continuous calibration
 
 The latency constant is re-measured **every beat**, for the whole session.

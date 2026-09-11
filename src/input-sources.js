@@ -112,9 +112,11 @@ export class FusedInput extends InputSource {
         if (this.recentMotion.length > 40) this.recentMotion.shift()
         this._pairUp(t, 'motion')
         if (this.preferMotion) {
+          // Emitted raw. The timing model applies the pad's own correction, which is
+          // exact whenever both sensors have seen the same strikes — see latencyFor().
           this.emit({
             ...hit,
-            time: t - this.motionOffsetS,
+            time: t,
             corroborated: this._sawMic(t),
             timingTrusted: true,
             source: 'motion',
@@ -184,6 +186,9 @@ export class FusedInput extends InputSource {
     if (this.mic && this.mic.available) return 'mic-silent'
     return 'none'
   }
+
+  /** True once enough strikes have been seen by both sensors to trust the conversion. */
+  get crossCalibrated () { return this._offsets.length >= 6 }
 
   /** How often the two sensors agreed — a hint that one of them is struggling. */
   get corroborationRate () {

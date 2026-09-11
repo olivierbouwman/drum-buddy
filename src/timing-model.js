@@ -71,7 +71,7 @@ export class TimingModel {
     /** Separate correction for pad hits; see latencyFor(). */
     this.outputLatencyS = null
     this.motionDelayS = null
-    this.motionLatencyS = null
+    this.crossOffsetS = null
   }
 
   /** The scheduler tells us when it asked for a click. */
@@ -182,10 +182,37 @@ export class TimingModel {
 
   latencyFor (source) {
     if (source !== 'motion') return this.latencyS || 0
-    if (this.motionLatencyS !== null && this.motionLatencyS !== undefined) return this.motionLatencyS
-    // Nothing measured yet: the output half of the round trip is the dominant term.
-    const out = this.outputLatencyS || 0
-    return out + (this.motionDelayS || 0)
+
+    /*
+     * Best case, and exact: a stick on the pad is heard by the microphone AND felt by
+     * the accelerometer — one event, two sensors, no assumptions. Shifting the pad's
+     * timestamp onto the microphone's reference and applying the microphone's own
+     * measured round trip needs nothing estimated.
+     *
+     * Writing out the three measurements available makes it clear why this wins:
+     *
+     *   L       = mic round trip          = outLat + inLat
+     *   D_tap   = screen tap -> pad       = padDelay
+     *   D_cross = pad - mic on a real hit = padDelay - inLat
+     *
+     *   K_motion = outLat + padDelay = L - inLat + padDelay = L + D_cross
+     *
+     * The tap term cancels completely. It is also the only version free of the
+     * shape mismatch between a finger on glass and a stick on rubber, which biases the
+     * peak the tap method depends on.
+     */
+    if (this.crossOffsetS !== null && this.crossOffsetS !== undefined && this.latencyS) {
+      return this.latencyS + this.crossOffsetS
+    }
+
+    // Fallback for a microphone that cannot hear her: the tap gives the sensor's delay
+    // honestly, and only the output half has to be estimated.
+    return (this.outputLatencyS || 0) + (this.motionDelayS || 0)
+  }
+
+  /** median(pad time - mic time) for the same strike, in seconds. */
+  setCrossOffset (seconds) {
+    this.crossOffsetS = seconds
   }
 
   /**
@@ -195,7 +222,6 @@ export class TimingModel {
   setMotionTiming ({ outputLatencyS, motionDelayS }) {
     if (typeof outputLatencyS === 'number') this.outputLatencyS = outputLatencyS
     if (typeof motionDelayS === 'number') this.motionDelayS = motionDelayS
-    this.motionLatencyS = (this.outputLatencyS || 0) + (this.motionDelayS || 0)
   }
 
   /**

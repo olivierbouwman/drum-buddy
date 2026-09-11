@@ -205,6 +205,26 @@ async function setUpSensors () {
   reportSensors(micOk, motionOk)
 }
 
+/*
+ * WHAT EACH SENSOR IS FOR
+ *
+ * The pad sensor decides WHEN SHE HIT. It is immune to the metronome bleeding out of
+ * the speaker and to a noisy room, needs no per-room tuning, and on the real tablet
+ * finds her notes with about 30 ms of spread.
+ *
+ * The microphone no longer scores anything. It keeps two jobs the pad cannot do:
+ *
+ *   1. Measuring how late everything is. Its own click, heard coming back, is the only
+ *      objective latency reference available — and without one, "never tell an on-time
+ *      child she is late" is just a hope. This part has been completely reliable
+ *      throughout: every measurement, on every run, steady to a fraction of a
+ *      millisecond.
+ *   2. Standing in when there is no pad sensor at all, such as on a laptop.
+ *
+ * Its detection still runs, but only so a strike seen by both sensors can pin down the
+ * pad's correction exactly. If the microphone hears nothing, that just falls back to the
+ * screen-tap measurement; nothing else degrades.
+ */
 function reportSensors (micOk, motionOk) {
   const bits = []
   if (motionOk) bits.push('pad wobble')
@@ -565,6 +585,9 @@ function startExercise (index) {
       if (state.hitStrengths.length > 120) state.hitStrengths.shift()
     }
     if (autoTune && hit.levels) autoTune.sampleHit(hit.levels)
+    // Once both sensors have seen enough of the same strikes, the pad's correction can
+    // be derived exactly instead of estimated. See TimingModel.latencyFor().
+    if (input && input.crossCalibrated) timing.setCrossOffset(input.motionOffsetS)
 
     /*
      * Always give her feedback.
