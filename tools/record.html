@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Drum Pad — Phase 0 Measurement</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #12141a;
+    --panel: #1c2029;
+    --line: #333a48;
+    --ink: #f2f4f8;
+    --muted: #a4adbe;
+    --accent: #6ea8fe;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --bad: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 1.5rem 1rem 4rem;
+    background: var(--bg); color: var(--ink);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    max-width: 46rem; margin-inline: auto;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1rem; margin: 2rem 0 .75rem; color: var(--muted);
+       text-transform: uppercase; letter-spacing: .07em; }
+  p { color: var(--muted); margin: .4rem 0; }
+  code { background: #0008; padding: .1em .35em; border-radius: 4px; font-size: .9em; }
+
+  button {
+    font: inherit; font-weight: 600; color: #0b0d12;
+    background: var(--accent); border: 0; border-radius: 10px;
+    padding: .85rem 1.3rem; min-height: 48px; cursor: pointer;
+  }
+  button:disabled { background: #3a4152; color: #7c8598; cursor: not-allowed; }
+  button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+  button.secondary { background: #2b3240; color: var(--ink); }
+
+  .status {
+    display: flex; gap: 1.25rem; flex-wrap: wrap;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0;
+  }
+  .status div { font-size: .9rem; }
+  .status b { display: block; color: var(--muted); font-weight: 500; font-size: .78rem;
+              text-transform: uppercase; letter-spacing: .05em; }
+
+  .meter { height: 12px; background: #0b0d12; border-radius: 6px;
+           overflow: hidden; margin-top: .45rem; border: 1px solid var(--line); }
+  .meter i { display: block; height: 100%; width: 0%; background: var(--ok);
+             transition: width .05s linear; }
+
+  .take {
+    display: grid; grid-template-columns: 2.2rem 1fr auto; gap: .9rem; align-items: center;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 1rem 1.1rem; margin-bottom: .7rem;
+  }
+  .take .n { font-size: 1.5rem; font-weight: 700; color: var(--muted); text-align: center; }
+  .take .what { font-weight: 600; }
+  .take .how { color: var(--muted); font-size: .88rem; }
+  .take[data-done="yes"] { border-color: var(--ok); }
+  .take[data-done="yes"] .n::after { content: ' ✓'; color: var(--ok); }
+
+  #countdown {
+    position: fixed; inset: 0; display: none; place-items: center;
+    background: #000e; z-index: 10; text-align: center;
+  }
+  #countdown.on { display: grid; }
+  #cdBig { font-size: clamp(4rem, 22vw, 11rem); font-weight: 800; line-height: 1; }
+  #cdWhat { font-size: 1.15rem; color: var(--muted); margin-top: .5rem; }
+  #cdBar { width: min(70vw, 24rem); height: 10px; background: #333; border-radius: 5px;
+           margin: 1.5rem auto 0; overflow: hidden; }
+  #cdBar i { display: block; height: 100%; width: 0%; background: var(--bad); }
+
+  .note { border-left: 3px solid var(--warn); padding-left: .9rem; margin: 1rem 0; }
+  ol { color: var(--muted); padding-left: 1.3rem; }
+  li { margin: .3rem 0; }
+</style>
+</head>
+<body>
+
+<h1>Drum pad measurement</h1>
+<p>Five short takes. This measures your actual pad, sticks, speakers and room, so the
+   app's detection can be tuned to real numbers instead of guesses. Nothing is uploaded —
+   files download to this device.</p>
+
+<div class="status">
+  <div><b>Microphone</b><span id="sMic">not started</span>
+    <div class="meter"><i id="lvl"></i></div>
+  </div>
+  <div><b>Motion sensor</b><span id="sMotion">not started</span></div>
+  <div><b>Sample rate</b><span id="sRate">—</span></div>
+</div>
+
+<p><button id="init">Turn on microphone &amp; motion</button></p>
+
+<div class="note" id="setupNote" hidden>
+  <p><b>Before you start:</b> set the volume to what she'd normally practise at, put the
+  pad roughly 40–50&nbsp;cm from the device, and keep the room as quiet as you can.
+  Take&nbsp;5 needs the tablet resting <em>beside or under</em> the pad — not on the
+  playing surface.</p>
+</div>
+
+<h2>Takes</h2>
+<div id="takes"></div>
+
+<h2>Then</h2>
+<ol>
+  <li>Move the downloaded files into <code>tools/recordings/</code></li>
+  <li>Run <code>npm run analyse</code></li>
+</ol>
+
+<div id="countdown" role="status" aria-live="assertive">
+  <div>
+    <div id="cdBig">3</div>
+    <div id="cdWhat"></div>
+    <div id="cdBar"><i></i></div>
+  </div>
+</div>
+
+<script type="module">
+const TAKES = [
+  { id: 1, key: 'bleed',      secs: 10, click: true,  motion: false,
+    what: 'Metronome only — do NOT drum',
+    how:  'Just let it beep. This captures what the mic hears from the speakers.' },
+  { id: 2, key: 'hits',       secs: 15, click: false, motion: false,
+    what: 'Drumming only — no metronome',
+    how:  'Play quarter notes. Include some VERY soft hits and some loud ones.' },
+  { id: 3, key: 'both',       secs: 15, click: true,  motion: false,
+    what: 'Both together',
+    how:  'Play along with the beep, normally.' },
+  { id: 4, key: 'roomtone',   secs: 5,  click: false, motion: false,
+    what: 'Room tone — silence',
+    how:  'Nobody plays, nobody talks. Captures the noise floor.' },
+  { id: 5, key: 'motion',     secs: 15, click: false, motion: true,
+    what: 'Drumming with the tablet touching the pad',
+    how:  'Same as take 2, but rest this device beside or under the pad first.' },
+]
+
+const CLICK_BPM = 60
+
+let ctx = null
+let micNode = null
+let recNode = null
+let stream = null
+let analyser = null
+let motionLog = []
+let motionSeen = 0
+let motionOK = false
+
+const $ = (id) => document.getElementById(id)
+
+// ---------------------------------------------------------------- permissions
+
+$('init').addEventListener('click', async () => {
+  $('init').disabled = true
+  try {
+    // Ask for raw audio. Every one of these would smear or gate the transients we're
+    // here to measure, so they must be off — and Safari honours them inconsistently,
+    // hence the read-back below.
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        channelCount: 1,
+      },
+    })
+  } catch (err) {
+    $('sMic').textContent = 'blocked (' + err.name + ')'
+    $('sMic').style.color = 'var(--bad)'
+    $('init').disabled = false
+    return
+  }
+
+  ctx = new AudioContext()
+  await ctx.resume()
+  await ctx.audioWorklet.addModule(import.meta.env.BASE_URL + 'recorder-worklet.js')
+
+  micNode = ctx.createMediaStreamSource(stream)
+  recNode = new AudioWorkletNode(ctx, 'recorder-worklet')
+  analyser = ctx.createAnalyser()
+  analyser.fftSize = 1024
+
+  // A worklet with no downstream connection may never be pulled. Route it to
+  // destination through a silent gain so it runs every quantum without feeding back.
+  const mute = ctx.createGain()
+  mute.gain.value = 0
+  micNode.connect(recNode).connect(mute).connect(ctx.destination)
+  micNode.connect(analyser)
+
+  const s = stream.getAudioTracks()[0].getSettings()
+  const applied = ['echoCancellation', 'noiseSuppression', 'autoGainControl']
+    .filter((k) => s[k] === true)
+  $('sMic').textContent = applied.length
+    ? 'on — but ' + applied.join(', ') + ' could not be disabled'
+    : 'on, raw'
+  $('sMic').style.color = applied.length ? 'var(--warn)' : 'var(--ok)'
+  $('sRate').textContent = ctx.sampleRate + ' Hz'
+  if (ctx.sampleRate < 32000) {
+    $('sRate').style.color = 'var(--bad)'
+    $('sRate').textContent += ' — too low, is a Bluetooth headset connected?'
+  }
+
+  await initMotion()
+  meter()
+  $('setupNote').hidden = false
+  renderTakes()
+})
+
+async function initMotion () {
+  if (typeof DeviceMotionEvent === 'undefined') {
+    $('sMotion').textContent = 'not supported on this device'
+    return
+  }
+  try {
+    if (typeof DeviceMotionEvent.requestPermission === 'function') {
+      const res = await DeviceMotionEvent.requestPermission()
+      if (res !== 'granted') {
+        $('sMotion').textContent = 'permission denied'
+        $('sMotion').style.color = 'var(--bad)'
+        return
+      }
+    }
+  } catch {
+    $('sMotion').textContent = 'permission failed'
+    return
+  }
+  window.addEventListener('devicemotion', onMotion)
+  setTimeout(() => {
+    motionOK = motionSeen > 5
+    $('sMotion').textContent = motionOK
+      ? 'on — ~' + Math.round(motionSeen / 1.5) + ' Hz'
+      : 'no data (desktop?)'
+    $('sMotion').style.color = motionOK ? 'var(--ok)' : 'var(--muted)'
+  }, 1500)
+}
+
+function onMotion (e) {
+  motionSeen++
+  if (!recording) return
+  const a = e.acceleration && e.acceleration.x !== null ? e.acceleration : e.accelerationIncludingGravity
+  if (!a) return
+  // Stamp with AudioContext time so motion and audio share one clock.
+  motionLog.push([+ctx.currentTime.toFixed(5), r(a.x), r(a.y), r(a.z)])
+}
+const r = (v) => v === null ? 0 : Math.round(v * 1000) / 1000
+
+function meter () {
+  const buf = new Float32Array(analyser.fftSize)
+  const tick = () => {
+    analyser.getFloatTimeDomainData(buf)
+    let peak = 0
+    for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i]))
+    $('lvl').style.width = Math.min(100, peak * 140) + '%'
+    $('lvl').style.background = peak > 0.95 ? 'var(--bad)' : peak > 0.5 ? 'var(--warn)' : 'var(--ok)'
+    requestAnimationFrame(tick)
+  }
+  tick()
+}
+
+// ---------------------------------------------------------------- metronome
+
+let clickBuf = null
+async function makeClick () {
+  // Matches the app's metronome exactly: 30 ms Hann-windowed 900 Hz sine at -12 dBFS.
+  // Hann rather than a hard gate matters — a rectangular envelope splatters energy up
+  // into the band we detect stick hits in, which would corrupt this measurement.
+  const n = Math.round(ctx.sampleRate * 0.03)
+  const off = new OfflineAudioContext(1, n, ctx.sampleRate)
+  const buf = off.createBuffer(1, n, ctx.sampleRate)
+  const d = buf.getChannelData(0)
+  for (let i = 0; i < n; i++) {
+    const hann = 0.5 * (1 - Math.cos(2 * Math.PI * i / (n - 1)))
+    d[i] = Math.sin(2 * Math.PI * 900 * i / ctx.sampleRate) * hann * 0.25
+  }
+  return buf
+}
+
+function scheduleClicks (startTime, secs, log) {
+  const period = 60 / CLICK_BPM
+  const nodes = []
+  for (let t = startTime + 0.35, i = 0; t < startTime + secs; t += period, i++) {
+    const src = ctx.createBufferSource()
+    src.buffer = clickBuf
+    src.connect(ctx.destination)
+    src.start(t)
+    nodes.push(src)
+    log.push(+t.toFixed(5))
+  }
+  return nodes
+}
+
+// ---------------------------------------------------------------- recording
+
+let recording = false
+
+function renderTakes () {
+  $('takes').innerHTML = ''
+  for (const t of TAKES) {
+    const el = document.createElement('div')
+    el.className = 'take'
+    el.dataset.done = 'no'
+    el.id = 'take' + t.id
+    el.innerHTML = `<div class="n">${t.id}</div>
+      <div><div class="what"></div><div class="how"></div></div>
+      <button>${t.secs}s</button>`
+    el.querySelector('.what').textContent = t.what
+    el.querySelector('.how').textContent = t.how
+    el.querySelector('button').addEventListener('click', () => runTake(t, el))
+    $('takes').append(el)
+  }
+}
+
+async function runTake (take, el) {
+  if (recording) return
+  if (!clickBuf) clickBuf = await makeClick()
+
+  document.querySelectorAll('.take button').forEach((b) => { b.disabled = true })
+  $('cdWhat').textContent = take.what
+
+  for (let i = 3; i > 0; i--) {
+    $('cdBig').textContent = i
+    $('countdown').classList.add('on')
+    await sleep(700)
+  }
+  $('cdBig').textContent = '●'
+
+  const chunks = []
+  let startFrame = null
+  motionLog = []
+  const clickTimes = []
+
+  recNode.port.onmessage = (e) => {
+    const m = e.data
+    if (m.type === 'started') startFrame = m.frame
+    else if (m.type === 'chunk') {
+      if (startFrame === null) startFrame = m.frame
+      chunks.push(m.samples)
+    }
+  }
+
+  recording = true
+  recNode.port.postMessage('start')
+  const t0 = ctx.currentTime
+  const nodes = take.click ? scheduleClicks(t0, take.secs, clickTimes) : []
+
+  // Progress bar, driven off the audio clock rather than a timer.
+  const bar = $('cdBar').firstElementChild
+  const anim = setInterval(() => {
+    bar.style.width = Math.min(100, ((ctx.currentTime - t0) / take.secs) * 100) + '%'
+  }, 60)
+
+  await sleep(take.secs * 1000)
+
+  recNode.port.postMessage('stop')
+  recording = false
+  clearInterval(anim)
+  nodes.forEach((n) => { try { n.stop() } catch {} })
+  $('countdown').classList.remove('on')
+  bar.style.width = '0%'
+
+  const total = chunks.reduce((a, c) => a + c.length, 0)
+  const pcm = new Float32Array(total)
+  let o = 0
+  for (const c of chunks) { pcm.set(c, o); o += c.length }
+
+  const name = `take${take.id}-${take.key}`
+  download(name + '.wav', wavBlob(pcm, ctx.sampleRate))
+  download(name + '.json', new Blob([JSON.stringify({
+    take: take.id,
+    key: take.key,
+    sampleRate: ctx.sampleRate,
+    seconds: take.secs,
+    recordStartContextTime: t0,
+    firstSampleFrame: startFrame,
+    samples: total,
+    bpm: take.click ? CLICK_BPM : null,
+    clickContextTimes: clickTimes,
+    motion: motionLog,
+    motionRateHz: motionLog.length ? +(motionLog.length / take.secs).toFixed(1) : 0,
+    trackSettings: stream.getAudioTracks()[0].getSettings(),
+    userAgent: navigator.userAgent,
+  }, null, 2)], { type: 'application/json' }))
+
+  el.dataset.done = 'yes'
+  el.querySelector('.how').textContent =
+    `Recorded ${(total / ctx.sampleRate).toFixed(1)}s` +
+    (take.motion || motionLog.length ? `, ${motionLog.length} motion samples` : '')
+  document.querySelectorAll('.take button').forEach((b) => { b.disabled = false })
+}
+
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
+
+function download (filename, blob) {
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = filename
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000)
+}
+
+/** 32-bit float WAV — keeps the full dynamic range of very soft hits. */
+function wavBlob (pcm, rate) {
+  const buf = new ArrayBuffer(44 + pcm.length * 4)
+  const v = new DataView(buf)
+  const str = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)) }
+  str(0, 'RIFF'); v.setUint32(4, 36 + pcm.length * 4, true); str(8, 'WAVE')
+  str(12, 'fmt '); v.setUint32(16, 16, true)
+  v.setUint16(20, 3, true)            // IEEE float
+  v.setUint16(22, 1, true)            // mono
+  v.setUint32(24, rate, true)
+  v.setUint32(28, rate * 4, true)
+  v.setUint16(32, 4, true)
+  v.setUint16(34, 32, true)
+  str(36, 'data'); v.setUint32(40, pcm.length * 4, true)
+  for (let i = 0; i < pcm.length; i++) v.setFloat32(44 + i * 4, pcm[i], true)
+  return new Blob([buf], { type: 'audio/wav' })
+}
+</script>
+</body>
+</html>

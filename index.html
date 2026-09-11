@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0d2330">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Drum Buddy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Nunito:wght@400;700;800&display=swap">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪕</text></svg>">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+
+<div id="snow" aria-hidden="true"></div>
+
+<!-- ---------------------------------------------------------------- start -->
+<section id="screen-start" class="screen on">
+  <div class="stage-lights" aria-hidden="true"></div>
+  <h1 class="logo">Drum&nbsp;Buddy</h1>
+  <p class="tagline">Play along with the jug band</p>
+
+  <div class="band-row big" aria-hidden="true">
+    <span class="member">🦔</span>
+    <span class="member lead">🦦</span>
+    <span class="member">🦫</span>
+    <span class="member">🐭</span>
+  </div>
+
+  <button id="btn-play" class="huge">▶ Play</button>
+
+  <p class="fineprint" id="start-note">
+    Uses the microphone to hear your drum. Nothing is recorded or sent anywhere.
+  </p>
+</section>
+
+<!-- -------------------------------------------------------------- warm-up -->
+<section id="screen-warmup" class="screen" aria-labelledby="warmup-title">
+  <h2 id="warmup-title" class="big-title">Waking up the jug band…</h2>
+  <div class="band-row big" id="warmup-band" aria-hidden="true">
+    <span class="member sleepy">🦔</span>
+    <span class="member sleepy lead">🦦</span>
+    <span class="member sleepy">🦫</span>
+  </div>
+  <p class="instruction" id="warmup-msg" role="status" aria-live="polite">Listening…</p>
+  <div class="hit-dots" id="warmup-dots" aria-hidden="true"></div>
+  <div class="meter-wrap"><div class="meter"><i id="warmup-level"></i></div></div>
+  <button id="btn-skip-warmup" class="ghost">Skip</button>
+</section>
+
+<!-- ------------------------------------------------------------- practice -->
+<section id="screen-play" class="screen" aria-labelledby="ex-name">
+  <header class="bar">
+    <button id="btn-quit" class="ghost small" aria-label="Stop and go back">✕</button>
+    <div class="ex-label"><span id="ex-name">Right hand</span></div>
+    <div class="tempo" role="group" aria-label="Tempo">
+      <button id="btn-slower" class="ghost small" aria-label="Slower">−</button>
+      <span id="bpm-readout" aria-live="off">60</span>
+      <button id="btn-faster" class="ghost small" aria-label="Faster">+</button>
+    </div>
+  </header>
+
+  <p class="ex-tip" id="ex-tip"></p>
+
+  <div class="ball-area" id="ball-area">
+    <div class="ball" id="ball" aria-hidden="true"></div>
+    <div class="pads" id="pads" aria-hidden="true"></div>
+    <div class="countin" id="countin" aria-hidden="true"></div>
+  </div>
+
+  <div class="count-words" id="count-words" aria-hidden="true"></div>
+
+  <div class="verdict-lane">
+    <div class="verdict" id="verdict" role="status" aria-live="off"><span></span></div>
+  </div>
+
+  <div class="hands" id="hands" aria-hidden="true">
+    <span class="hand" data-hand="L">L</span>
+    <span class="hand" data-hand="R">R</span>
+  </div>
+
+  <div class="band-row" id="play-band" aria-hidden="true"></div>
+
+  <footer class="bar">
+    <div class="streak" id="streak" aria-live="off"><b>0</b> in a row</div>
+    <div class="meter-wrap small"><div class="meter"><i id="play-level"></i></div></div>
+  </footer>
+  <p class="sr-only" id="play-sr" aria-live="polite"></p>
+</section>
+
+<!-- ---------------------------------------------------------- celebration -->
+<section id="screen-done" class="screen" aria-labelledby="done-title">
+  <div class="confetti" id="confetti" aria-hidden="true"></div>
+  <h2 id="done-title" class="big-title">Nice playing!</h2>
+  <div class="stars" id="done-stars" aria-hidden="true"></div>
+  <p class="badge" id="done-badge">Getting Steadier!</p>
+  <dl class="scoreboard" id="done-stats"></dl>
+  <p class="instruction" id="done-hint">Hit your pad twice to keep going</p>
+  <div class="row">
+    <button id="btn-again" class="huge">Again</button>
+    <button id="btn-next" class="huge alt">Next →</button>
+  </div>
+  <button id="btn-home" class="ghost">Back to the start</button>
+</section>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

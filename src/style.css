@@ -1,0 +1,352 @@
+/**
+ * Drum Buddy styles.
+ *
+ * Theme: a snowy riverside hollow at night, lit by lantern light — the look of a
+ * homemade jug band playing on a frozen river. Cold blues outside, warm amber inside,
+ * hand-lettered signage, nothing slick or corporate.
+ *
+ * Every colour below was contrast-checked against both --bg and --panel; all pass
+ * WCAG AA, most AAA.
+ *
+ * Two rules that shape everything here:
+ *  - No meaning is ever carried by colour alone. Every verdict also has a distinct
+ *    emoji, a word, and a position on the lane.
+ *  - prefers-reduced-motion turns continuous motion into discrete steps. The beat cue
+ *    is calmed, never removed — it's the whole point of the screen.
+ */
+
+:root {
+  color-scheme: dark;
+  --bg: #0d2330;       /* winter night over the hollow */
+  --bg-2: #14384a;
+  --panel: #1b4257;
+  --line: #2f6b83;
+  --ink: #f7f2e6;      /* snow, slightly warm — never clinical white */
+  --muted: #b8d0da;    /* frost */
+
+  --hot: #ffc857;      /* lantern light  — perfect */
+  --quick: #8ad8f2;    /* river ice      — rabbit  */
+  --slow: #f5a068;     /* fire ember     — turtle  */
+  --ok: #8fd6a0;       /* pine           */
+  --kraft: #dcbb8c;    /* burlap and old wood */
+
+  --pad: clamp(1rem, 4vw, 2rem);
+  --font: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Kalam', 'Chalkboard SE', 'Comic Sans MS', cursive;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background:
+    radial-gradient(130% 80% at 50% 100%, #1d4a5e33, transparent 70%),
+    radial-gradient(120% 90% at 50% 0%, var(--bg-2), var(--bg) 72%);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: clamp(16px, 2.2vw, 20px);
+  -webkit-font-smoothing: antialiased;
+  touch-action: manipulation;
+}
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ------------------------------------------------------------- screens */
+
+.screen {
+  position: absolute; inset: 0;
+  z-index: 2;                 /* above the snow layer, which is z-index 1 */
+  display: none;
+  flex-direction: column; align-items: center; justify-content: center;
+  gap: clamp(.6rem, 2vh, 1.4rem);
+  padding: var(--pad);
+  padding-top: max(var(--pad), env(safe-area-inset-top));
+  padding-bottom: max(var(--pad), env(safe-area-inset-bottom));
+  text-align: center;
+}
+.screen.on { display: flex; }
+
+/* ------------------------------------------------------------- buttons */
+
+button {
+  font: inherit; font-weight: 800;
+  border: 0; border-radius: 999px;
+  cursor: pointer;
+  min-height: 48px; min-width: 48px;
+  transition: transform .12s ease, background-color .12s ease;
+}
+button:active { transform: scale(.96); }
+button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
+
+.huge {
+  background: var(--hot); color: #35220a;
+  font-size: clamp(1.3rem, 5vw, 2rem);
+  padding: .7em 1.6em;
+  box-shadow: 0 8px 0 #b9852c, 0 14px 26px #0008;
+}
+.huge:active { box-shadow: 0 4px 0 #b9852c, 0 8px 16px #0008; transform: translateY(4px) scale(.99); }
+.huge.alt { background: var(--ok); color: #0d3018; box-shadow: 0 8px 0 #4f9c68, 0 14px 26px #0008; }
+.huge.alt:active { box-shadow: 0 4px 0 #4f9c68; }
+
+.ghost {
+  background: #ffffff1a; color: var(--ink);
+  padding: .55em 1.2em; font-weight: 700; font-size: .95rem;
+}
+.ghost:hover { background: #ffffff2e; }
+.ghost.small { padding: .35em .8em; font-size: 1.1rem; line-height: 1; }
+
+.row { display: flex; gap: .8rem; flex-wrap: wrap; justify-content: center; }
+
+/* ------------------------------------------------------------- start */
+
+.logo {
+  font-family: var(--font-display);
+  font-size: clamp(2.6rem, 12vw, 5.4rem);
+  margin: 0; line-height: 1;
+  text-shadow: 0 4px 0 #00000055;
+  letter-spacing: -.01em;
+}
+.tagline { color: var(--kraft); margin: 0; font-size: 1.05rem; font-family: var(--font-display); }
+.fineprint { color: var(--muted); font-size: .8rem; max-width: 26rem; opacity: .8; }
+
+.stage-lights {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(38% 50% at 18% -6%, #ffc85726, transparent 70%),
+    radial-gradient(38% 50% at 82% -6%, #8ad8f21f, transparent 70%);
+}
+
+/* ------------------------------------------------------------- band */
+
+.band-row { display: flex; gap: clamp(.4rem, 2vw, 1.2rem); align-items: flex-end; }
+.member {
+  font-size: clamp(2rem, 8vw, 3.4rem);
+  line-height: 1;
+  filter: grayscale(1); opacity: .35;
+  transition: filter .35s ease, opacity .35s ease, transform .2s ease;
+}
+.member.awake { filter: none; opacity: 1; }
+.member.lead { font-size: clamp(2.8rem, 12vw, 5rem); filter: none; opacity: 1; }
+.band-row.big .member { filter: none; opacity: 1; }
+/* Must out-specify .band-row.big .member above, or the warm-up can't look asleep. */
+.band-row .member.sleepy { filter: grayscale(1); opacity: .38; }
+.member.bounce { animation: bounce .18s ease; }
+@keyframes bounce { 50% { transform: translateY(-14%) scale(1.08); } }
+
+/* ------------------------------------------------------------- warm-up */
+
+.big-title { font-family: var(--font-display); font-size: clamp(1.6rem, 6.5vw, 2.6rem); margin: 0; }
+.instruction { font-size: clamp(1rem, 3.6vw, 1.35rem); color: var(--ink); margin: .2rem 0; }
+
+.hit-dots { display: flex; gap: .6rem; }
+.hit-dots span {
+  width: 1.1rem; height: 1.1rem; border-radius: 50%;
+  background: #ffffff26; border: 2px solid var(--line);
+}
+.hit-dots span.got { background: var(--ok); border-color: var(--ok); transform: scale(1.15); }
+
+.meter-wrap { width: min(70vw, 20rem); }
+.meter-wrap.small { width: min(40vw, 9rem); }
+.meter {
+  height: 10px; border-radius: 5px; overflow: hidden;
+  background: #00000055; border: 1px solid var(--line);
+}
+.meter i { display: block; height: 100%; width: 0%; background: var(--ok); }
+
+/* ------------------------------------------------------------- practice */
+
+#screen-play { justify-content: space-between; }
+
+.bar {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  gap: .6rem; flex: 0 0 auto;
+}
+.ex-label { font-weight: 800; font-size: 1rem; color: var(--muted); }
+.tempo { display: flex; align-items: center; gap: .5rem; font-weight: 800; }
+#bpm-readout { min-width: 2.6ch; font-variant-numeric: tabular-nums; }
+
+.ex-tip {
+  margin: 0; flex: 0 0 auto;
+  color: var(--muted); font-size: clamp(.85rem, 2.6vw, 1rem);
+  max-width: 34rem; line-height: 1.35;
+}
+
+/* What to say out loud. Counting aloud is how the subdivision gets internalised, so
+   it gets real estate rather than being buried in the exercise description. */
+.count-words {
+  flex: 0 0 auto; width: 100%;
+  display: flex; justify-content: space-around; align-items: baseline;
+  font-size: clamp(.9rem, 3.4vw, 1.35rem); font-weight: 800;
+  color: var(--quick);
+}
+/* Each word sits under the pad it belongs to, so the words and the beats line up. */
+.count-words span { flex: 1 1 0; text-align: center; }
+.count-words span.soft { opacity: .5; }
+
+.ball-area {
+  position: relative; width: 100%; flex: 1 1 auto;
+  min-height: 26vh; max-height: 34vh;
+  display: flex; align-items: flex-end;
+}
+
+/* Count-in sits over the ball area, big enough to read from across the room. */
+.countin {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: clamp(4rem, 20vw, 9rem); font-weight: 900;
+  color: #ffffff; opacity: 0; pointer-events: none;
+  text-shadow: 0 0 40px #ffc85777;
+}
+.countin.show { opacity: .92; }
+
+.ball {
+  position: absolute; left: 0; bottom: 0;
+  width: clamp(2rem, 8vw, 3.2rem); aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #fffdf6, var(--hot) 55%, #d99a2c);
+  box-shadow: 0 0 30px #ffc85799;
+  will-change: transform;
+}
+
+.pads {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; justify-content: space-around; align-items: flex-end;
+}
+.pads .p {
+  width: clamp(3.4rem, 19vw, 6.5rem); height: 16px; border-radius: 10px;
+  background: #ffffff26; border: 3px solid var(--line);
+  box-shadow: inset 0 2px 0 #ffffff1f;
+  transition: background-color .1s ease, transform .1s ease, box-shadow .1s ease;
+}
+.pads .p.hit {
+  background: var(--hot); border-color: var(--ink);
+  transform: scaleY(1.5); box-shadow: 0 0 22px #ffc857aa;
+}
+
+/* verdict --------------------------------------------------------- */
+
+.verdict-lane {
+  position: relative; width: min(100%, 34rem); height: 3.4rem; flex: 0 0 auto;
+  border-radius: 999px; background: #00000038;
+  border: 2px solid var(--line);
+  overflow: hidden;
+}
+/* Centre marker: "on the beat" is a place, not just a colour. */
+.verdict-lane::before {
+  content: ''; position: absolute; left: 50%; top: 8%; bottom: 8%;
+  width: 4px; margin-left: -2px; border-radius: 2px; background: #ffffff5c;
+}
+.verdict {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: clamp(1rem, 4vw, 1.5rem);
+}
+.verdict span { opacity: 0; transition: opacity .2s ease; }
+.verdict.show span { opacity: 1; }
+.verdict[data-kind="perfect"] { color: var(--hot); }
+.verdict[data-kind="quick"]   { color: var(--quick); }
+.verdict[data-kind="slow"]    { color: var(--slow); }
+.verdict[data-kind="miss"]    { color: var(--muted); }
+
+.dot {
+  position: absolute; top: 50%; width: .9rem; height: .9rem; margin: -.45rem 0 0 -.45rem;
+  border-radius: 50%; background: var(--muted);
+  animation: fade 2.4s forwards;
+}
+.dot.perfect { background: var(--hot); }
+.dot.quick { background: var(--quick); }
+.dot.slow { background: var(--slow); }
+@keyframes fade { from { opacity: .95; transform: scale(1.3); } to { opacity: 0; transform: scale(.7); } }
+
+/* hands ----------------------------------------------------------- */
+
+.hands { display: flex; gap: 1.2rem; flex: 0 0 auto; }
+.hand {
+  width: 3rem; height: 3rem; border-radius: 50%;
+  display: grid; place-items: center;
+  font-weight: 900; font-size: 1.2rem;
+  background: #ffffff14; border: 3px solid var(--line); color: var(--muted);
+  transition: transform .1s ease, background-color .1s ease, color .1s ease;
+}
+.hand.next { background: var(--hot); color: #3a2708; border-color: var(--ink); transform: scale(1.14); }
+
+.streak { font-weight: 800; font-size: .95rem; color: var(--muted); }
+.streak b { color: var(--hot); font-size: 1.35rem; font-family: var(--font-display); }
+
+/* ------------------------------------------------------------- done */
+
+.stars { font-size: clamp(2.2rem, 12vw, 4rem); letter-spacing: .1em; }
+.badge {
+  font-family: var(--font-display);
+  font-size: clamp(1.3rem, 5.5vw, 2.1rem); font-weight: 700; margin: 0;
+  color: var(--hot);
+}
+.scoreboard {
+  display: grid; grid-template-columns: auto auto; gap: .3rem 1.2rem;
+  margin: 0; color: var(--muted); font-size: .95rem;
+}
+.scoreboard dt { text-align: right; }
+.scoreboard dd { margin: 0; text-align: left; font-weight: 800; color: var(--ink); }
+
+.confetti { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.confetti i {
+  position: absolute; top: -10vh; font-size: 1.5rem;
+  animation: fall linear forwards;
+}
+@keyframes fall {
+  to { transform: translateY(115vh) rotate(540deg); }
+}
+
+/* ------------------------------------------------------------- toast */
+
+#toast {
+  position: fixed; left: 50%; bottom: 2rem; transform: translateX(-50%) translateY(150%);
+  background: var(--panel); border: 2px solid var(--line);
+  padding: .7em 1.2em; border-radius: 999px;
+  font-weight: 700; font-size: .95rem; max-width: 90vw;
+  transition: transform .3s cubic-bezier(.2,.9,.3,1.2), opacity .2s ease;
+  opacity: 0; pointer-events: none;
+  z-index: 50;
+}
+#toast.on { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+/* ------------------------------------------------------------- snow */
+
+/* Frogtown Hollow is always snowing. Decorative only, and switched off entirely
+   under prefers-reduced-motion. */
+#snow { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 1; }
+#snow i {
+  position: absolute; top: -6vh;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #eaf4f8; opacity: .5;
+  animation: drift linear infinite;
+}
+@keyframes drift {
+  0%   { transform: translate(0, -6vh); }
+  100% { transform: translate(var(--sway, 20px), 108vh); }
+}
+
+/* ------------------------------------------------- reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+  #snow { display: none; }
+  /* The ball stops arcing and simply steps from pad to pad — the beat cue stays,
+     it just no longer moves continuously. */
+  .ball { transition: none; }
+  .member.bounce { animation: none; }
+  .pads .p.hit { transform: none; outline: 3px solid var(--hot); }
+}
+
+@media (prefers-contrast: more) {
+  :root { --muted: #e4f1f6; --line: #6ba6bf; }
+  #snow { display: none; }
+  .meter i { background: #fff; }
+}
