@@ -41,7 +41,31 @@ if (notes.length < 8 || motion.length < 200) {
  * one bit is still recoverable by averaging — but only if the constant ~9.8 is taken out
  * first, and only if any slow drift from the tablet settling goes with it.
  */
+/*
+ * Before anything else: is there any variation to analyse at all?
+ *
+ * Checked on the raw channel and checked FIRST. A frozen channel and a channel with no
+ * beat-locked signal in it produce the same "nothing found" at the end, and they mean
+ * completely different things — one is a negative result, the other is no result. This
+ * check was originally run after the high-pass, where a constant input had already been
+ * turned into a column of zeros and was reported as the wrong one of the two.
+ *
+ * Averaging recovers a signal below one bit only if the bit is dithering. A sensor that
+ * repeats one value exactly has no dither, and no amount of folding invents any.
+ */
 const hasG = motion.length > 0 && motion[0].length > 2 && motion.some((m) => m[2] !== null)
+for (const [col, name] of hasG ? [[2, 'gravity-inclusive']] : [[1, 'gravity-free']]) {
+  const vals = motion.map((m) => m[col]).filter((v) => v !== null)
+  const distinct = new Set(vals).size
+  if (distinct > 2) break
+  console.log(`\n  The ${name} channel holds ${distinct === 1 ? `one value (${vals[0]})` : `${distinct} values`} across all ${vals.length} samples.`)
+  console.log('  This sensor latches when the tablet is still: below its motion threshold')
+  console.log('  it repeats the last reading instead of dithering around it. There is no')
+  console.log('  noise for a sub-bit signal to ride on, so averaging cannot recover one.')
+  console.log('\n  VERDICT: this hardware cannot see its own speaker. Not "too quiet to')
+  console.log('  measure" — the sensor is not reporting at all while nothing is moving.')
+  process.exit(0)
+}
 if (hasG) {
   const WIN = 25                                    // ~0.5 s at 50 Hz
   const g = motion.map((m) => m[2])
@@ -62,16 +86,6 @@ console.log(`${file}\n  ${notes.length} beats of ${(beat * 1000).toFixed(0)} ms,
 
 // Anything that looks like a real strike disqualifies the whole run: this only means
 // something if nobody touched the pad.
-// A channel that is identically zero is not a quiet channel; it is a channel that was
-// never populated. Worth naming, because it looks exactly like "no signal found".
-if (motion.every((m) => m[1] === 0)) {
-  console.log('\n  Every sample is exactly 0.0000 over the whole run.')
-  console.log('  This device deadbands its gravity-free accelerometer at rest, so there')
-  console.log('  is nothing to analyse — not a weak signal, no signal. Re-run with a')
-  console.log('  build that records the gravity-inclusive channel.')
-  process.exit(0)
-}
-
 const mags = motion.map((m) => m[1])
 const rest = median(mags)
 const loud = mags.filter((v) => v > rest + 1.0).length
