@@ -99,6 +99,28 @@ console.log('\ngood playing is never called displaced')
   check('and still reports a small offset', Math.abs(st.offsetMs) < 60, `${st.offsetMs.toFixed(0)} ms`)
 }
 
+console.log('\nplaying far off the beat is named, not met with silence')
+{
+  // Reproduces a deliberate test run: steady playing about half a beat late. The app
+  // correctly refused to score it, and then said nothing at all.
+  const ns = notes(32)
+  const late = ns.map((n) => ({ time: n.time + 0.44 + (Math.random() * 0.06 - 0.03) }))
+  const st = summarise(ns, late, BEAT)
+  check('does not pretend she was accurate', !st.enough || Math.abs(st.offsetMs) > 200)
+  check('notices she was far off', st.farOff !== null, JSON.stringify(st.farOff))
+  check('names the direction correctly', st.farOff && st.farOff.direction === 'late',
+    st.farOff && st.farOff.direction)
+
+  const early = ns.map((n) => ({ time: n.time - 0.40 + (Math.random() * 0.06 - 0.03) }))
+  const st2 = summarise(ns, early, BEAT)
+  check('and the other direction too', st2.farOff && st2.farOff.direction === 'early',
+    st2.farOff && st2.farOff.direction)
+
+  // Ordinary good playing must not be labelled far off.
+  const fine = ns.map((n) => ({ time: n.time + (Math.random() * 0.08 - 0.04) }))
+  check('good playing is never called far off', summarise(ns, fine, BEAT).farOff === null)
+}
+
 console.log('\nmatching stays in order')
 {
   const ns = notes(6)

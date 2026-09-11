@@ -150,6 +150,7 @@ export function summarise (notes, hits, beatS) {
   const coverage = notes.length ? pairs.length / notes.length : 0
   const shift = detectWholeBeatShift(notes, hits, beatS)
 
+  const farOff = detectFarOff(notes, hits, beatS, pairs.length)
   const band = STEADINESS.find((b) => spread < b.under) || STEADINESS[STEADINESS.length - 1]
 
   // When she is out by whole beats, the matcher's own offset is measured against the
@@ -172,8 +173,52 @@ export function summarise (notes, hits, beatS) {
     // be worse than saying nothing.
     lean: shift !== 0 ? 'shifted' : Math.abs(offset) < 40 ? 'even' : offset < 0 ? 'quick' : 'slow',
     shift,
+    farOff,
     enough: pairs.length >= 6 && shift === 0,
   }
+}
+
+/**
+ * She is playing steadily, but nowhere near the beat.
+ *
+ * There is a gap between "close enough to score" and "a whole beat out": played half a
+ * beat late, every hit misses its note by more than the capture window, yet the
+ * displacement is too small to call a whole-beat shift. Tested deliberately and the app
+ * came back with nothing matched, one star and no explanation — honest, in that it did
+ * not claim she was fine, but useless, because to a child that reads as the app being
+ * broken rather than as feedback.
+ *
+ * So when plenty of hits arrive and they are consistently displaced, say which way.
+ *
+ * @returns {{direction:'late'|'early', ms:number}|null}
+ */
+function detectFarOff (notes, hits, beatS, matched) {
+  if (notes.length < 4) return null
+  if (matched >= notes.length * 0.4) return null      // scoring normally; nothing to say
+  if (hits.length < notes.length * 0.5) return null   // too few hits to read a pattern
+
+  // Where each hit sits relative to the beat it is nearest, wrapped into one beat so
+  // "very late" and "slightly early against the next beat" are the same thing.
+  const offsets = []
+  for (const h of hits) {
+    let d = Infinity
+    for (const n of notes) if (Math.abs(h.time - n.time) < Math.abs(d)) d = h.time - n.time
+    if (Math.abs(d) <= beatS) offsets.push(d)
+  }
+  if (offsets.length < 4) return null
+
+  const med = median(offsets)
+  const spread = madSpread(offsets)
+  // Only worth saying if she is consistently displaced rather than simply scattered.
+  if (spread > beatS * 0.25) return null
+
+  // Wrap to whichever side is the shorter description of the same thing.
+  let ms = med * 1000
+  if (ms < -beatS * 500) ms += beatS * 1000
+  if (ms > beatS * 500) ms -= beatS * 1000
+  if (Math.abs(ms) < 120) return null
+
+  return { direction: ms > 0 ? 'late' : 'early', ms: Math.round(ms) }
 }
 
 /**
