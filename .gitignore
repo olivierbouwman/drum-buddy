@@ -2,3 +2,4 @@ node_modules
 dist
 tools/recordings
 .DS_Store
+tools/diag/

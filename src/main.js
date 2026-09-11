@@ -23,6 +23,7 @@ import { TimingModel } from './timing-model.js'
 import { probeOffsetSeconds, refractoryForSpacing } from './dsp-core.js'
 import { AutoTune } from './auto-tune.js'
 import { SelfTest } from './selftest.js'
+import { startDiagnostics } from './diagnostics.js'
 import { LiveScorer, summarise, scoreFor, notesPerMinute } from './scoring.js'
 import * as history from './history.js'
 import { assess } from './level-coach.js'
@@ -948,6 +949,53 @@ if (canFullscreen && !installed) {
   sync()
 }
 
+
+/**
+ * Everything worth knowing about how detection is going, in one object.
+ *
+ * Read remotely while the app runs on the real tablet, so behaviour can be diagnosed
+ * from the device itself rather than inferred from a description of what happened on
+ * screen — which mis-diagnosed three separate bugs here.
+ */
+function snapshot () {
+  const hs = [...state.hitStrengths].sort((a, b) => a - b)
+  const q = (f) => (hs.length ? hs[Math.floor((hs.length - 1) * f)] : null)
+  return {
+    when: new Date().toISOString(),
+    screen: [...document.querySelectorAll('.screen')].find((x) => x.classList.contains('on'))?.id,
+    sensors: {
+      timingFrom: input ? input.timingSource : 'none',
+      micAvailable: !!(mic && mic.available),
+      micError: mic ? mic.error : null,
+      micProcessing: mic ? mic.processing : null,
+      motionAvailable: !!(motion && motion.available),
+      motionError: motion ? motion.error : null,
+      motionRateHz: motion ? motion.rateHz : null,
+      motionRest: motion ? motion.rest : null,
+      corroboration: input ? input.corroborationRate : null,
+      sampleRate: engine.sampleRate,
+    },
+    timing: {
+      status: timing.status,
+      latencyMs: timing.latencyMs,
+      spreadMs: timing.spreadMs,
+      approximate: !!timing.approximate,
+      usable: timing.usable,
+    },
+    detection: {
+      hits: state.hits.length,
+      notes: state.notes.length,
+      hitStrength: { p10: q(0.1), p50: q(0.5), p90: q(0.9), n: hs.length },
+      micPeak: mic ? mic.level : null,
+    },
+    tuning: autoTune ? autoTune.report : null,
+    lastStats: state.lastStats,
+    exercise: EXERCISES[state.exerciseIndex]?.id,
+    bpm: state.bpm,
+    level: level.id,
+      }
+}
+
 // ------------------------------------------------------------------ snow
 
 /** Frogtown Hollow is always snowing. Decorative; skipped entirely if she'd rather
@@ -986,52 +1034,15 @@ if (debug) {
   window.drumBuddy = {
     engine, state, startExercise, finishExercise, EXERCISES,
     get stats () { return state.lastStats },
-
-    /**
-     * Everything worth knowing about how detection is going, in one object.
-     *
-     * Exists to be read remotely over the Chrome DevTools protocol while the app runs
-     * on the real tablet, so behaviour can be diagnosed from the actual device instead
-     * of inferred from a description of what happened on screen.
-     */
-    snapshot () {
-      const hs = [...state.hitStrengths].sort((a, b) => a - b)
-      const q = (f) => (hs.length ? hs[Math.floor((hs.length - 1) * f)] : null)
-      return {
-        when: new Date().toISOString(),
-        screen: [...document.querySelectorAll('.screen')].find((x) => x.classList.contains('on'))?.id,
-        sensors: {
-          timingFrom: input ? input.timingSource : 'none',
-          micAvailable: !!(mic && mic.available),
-          micError: mic ? mic.error : null,
-          micProcessing: mic ? mic.processing : null,
-          motionAvailable: !!(motion && motion.available),
-          motionError: motion ? motion.error : null,
-          motionRateHz: motion ? motion.rateHz : null,
-          motionRest: motion ? motion.rest : null,
-          corroboration: input ? input.corroborationRate : null,
-          sampleRate: engine.sampleRate,
-        },
-        timing: {
-          status: timing.status,
-          latencyMs: timing.latencyMs,
-          spreadMs: timing.spreadMs,
-          approximate: !!timing.approximate,
-          usable: timing.usable,
-        },
-        detection: {
-          hits: state.hits.length,
-          notes: state.notes.length,
-          hitStrength: { p10: q(0.1), p50: q(0.5), p90: q(0.9), n: hs.length },
-          micPeak: mic ? mic.level : null,
-        },
-        tuning: autoTune ? autoTune.report : null,
-        lastStats: state.lastStats,
-        exercise: EXERCISES[state.exerciseIndex]?.id,
-        bpm: state.bpm,
-        level: level.id,
-      }
-    },
+    snapshot,
   }
+
+
   console.log('[drum-buddy] debug on — window.drumBuddy')
 }
+
+/*
+ * When the app is being served from a developer machine on the same network, post what
+ * it is seeing back there. Does nothing at all in the published build.
+ */
+startDiagnostics(snapshot)

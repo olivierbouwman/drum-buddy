@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import basicSsl from '@vitejs/plugin-basic-ssl'
 import { resolve } from 'node:path'
+import { diagServer } from './tools/diag-server.mjs'
 
 // Two things need a secure context: getUserMedia and DeviceMotionEvent. On the Mac,
 // http://localhost counts as secure and needs nothing. On the iPad it does not — so
@@ -10,7 +11,9 @@ export default defineConfig(({ command }) => ({
   base: command === 'build' ? '/drum-buddy/' : '/',
   // https only when asked for: localhost is already a secure context, but a phone or
   // tablet on the LAN is not, and getUserMedia/DeviceMotion both require one.
-  plugins: process.env.HTTPS ? [basicSsl()] : [],
+  // The diagnostics receiver is DEV ONLY. Nothing in the published build knows it
+  // exists, so the deployed app never sends anything anywhere.
+  plugins: [diagServer(), ...(process.env.HTTPS ? [basicSsl()] : [])],
   server: {
     port: 5174,
   },
