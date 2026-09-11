@@ -643,3 +643,29 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
   .namefield input { font-size: 1rem; min-height: 38px; padding: .3em .8em; }
   #st-log { min-height: 4rem; padding: .5rem .7rem; font-size: .7rem; }
 }
+
+/* --------------------------------------------------- falling notes */
+
+/*
+ * Restored: these were deleted as collateral when the drawn pads were removed, leaving
+ * every note zero-height and transparent. The lanes still scrolled and the timing still
+ * worked — there was simply nothing to see, which is a nastier failure than a crash.
+ */
+.lane .notes {
+  position: absolute; inset: 0;
+  overflow: hidden;
+  border-radius: 14px;
+}
+.note {
+  position: absolute; left: 8%; right: 8%;
+  height: 14px; border-radius: 8px;
+  background: var(--kraft);
+  box-shadow: 0 2px 0 #00000040;
+  will-change: transform;
+}
+/* Already gone past: dimmed rather than removed, so the run of them reads as a track. */
+.note.done { background: #ffffff2b; box-shadow: none; }
+
+@media (max-height: 500px) {
+  .note { height: 11px; }
+}

@@ -110,7 +110,15 @@ export class MotionInput extends InputSource {
     const floor = this.sensitive ? MOTION.calibrateMinThreshold : MOTION.minThreshold
     const threshold = med + Math.max(k * (p90 - med), floor)
 
-    this._onLevel(mag / (threshold || 1), mag)
+    /*
+     * Meter reads zero at rest and full at the trigger point.
+     *
+     * It used to show the raw ratio to the threshold, which sat around half full with
+     * the tablet completely still — so "is it feeling anything?" could not be answered
+     * by looking at it, which is the only reason the meter exists.
+     */
+    const span = Math.max(1e-6, threshold - med)
+    this._onLevel(Math.max(0, (mag - med) / span), mag)
 
     if (mag > threshold) {
       /*

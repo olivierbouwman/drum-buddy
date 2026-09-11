@@ -679,6 +679,7 @@ function showToday () {
 
   renderPlan()
   show('today')
+  armDrumToStart()
 }
 
 /**
@@ -767,8 +768,47 @@ function finishSession () {
     `Practice finished. Best score ${best}. ${streak} days in a row.`
 }
 
-$('btn-start-session').addEventListener('click', () => { state.stepIndex = 0; runStep() })
-$('btn-today-back').addEventListener('click', () => abortToStart())
+$('btn-start-session').addEventListener('click', startSession)
+
+function startSession () {
+  disarmToday()
+  state.stepIndex = 0
+  runStep()
+}
+
+/*
+ * Start by drumming, so she never has to put the sticks down and reach for the screen.
+ *
+ * Guarded the same way as drum-to-continue: armed on a delay, and only hits as hard as
+ * the way she actually plays count, since room noise trips a bare detection easily. The
+ * Start button is always there too — this is an addition, never the only route.
+ */
+let disarmToday = () => {}
+
+function armDrumToStart () {
+  const threshold = deliberateHitThreshold()
+  const hint = $('today-hint')
+  if (threshold === null) {
+    if (hint) hint.textContent = ''
+    disarmToday = () => {}
+    return
+  }
+  if (hint) hint.textContent = `…or just hit your pad ${DRUM_NAV.hitsNeeded} times`
+
+  let recent = []
+  let armed = false
+  const timer = setTimeout(() => { armed = true }, DRUM_NAV.armDelayMs)
+  const off = onHits((hit) => {
+    if (!armed) return
+    if (typeof hit.strength === 'number' && hit.strength < threshold) return
+    const now = hit.time * 1000
+    recent = recent.filter((t) => now - t < DRUM_NAV.withinMs)
+    recent.push(now)
+    if (recent.length >= DRUM_NAV.hitsNeeded) startSession()
+  })
+  disarmToday = () => { clearTimeout(timer); off(); disarmToday = () => {} }
+}
+$('btn-today-back').addEventListener('click', () => { disarmToday(); abortToStart() })
 $('btn-bonus').addEventListener('click', runBonus)
 $('btn-session-done').addEventListener('click', () => abortToStart())
 
