@@ -90,6 +90,16 @@ const state = {
 function show (name) {
   for (const el of document.querySelectorAll('.screen')) el.classList.remove('on')
   $('screen-' + name).classList.add('on')
+  /*
+   * The drums belong to the opening screen only.
+   *
+   * No screen paints its own background, so at z-index 1 they were drifting behind the
+   * lanes during an exercise too — competing with the one thing she has to watch, and
+   * costing animation work on a tablet that is running a metronome and a filterbank at
+   * the same time.
+   */
+  const deco = $('dancers')
+  if (deco) deco.classList.toggle('off', name !== 'start')
   // Move focus somewhere sensible for keyboard and screen-reader users.
   const first = $('screen-' + name).querySelector('button:not(.ghost), button')
   if (first) first.focus({ preventScroll: true })
@@ -2055,7 +2065,7 @@ async function runTuner () {
  * drum and the room moves, stop and it settles. Reacting to the metronome instead would
  * look the same when she is playing perfectly and lie the rest of the time.
  */
-const DANCERS = ['🎵', '🎶', '🥁', '🪕', '🎺', '🎻', '🪗', '🎷']
+const DANCERS = ['🥁', '🪘']
 let dancers = []
 
 function makeDancers (count = 18) {
@@ -2095,7 +2105,7 @@ function popDancers () {
   const now = performance.now()
   if (now - lastPop < 200) return
   lastPop = now
-  for (let n = 0; n < 3; n++) {
+  for (let n = 0; n < 4; n++) {
     const el = dancers[(Math.random() * dancers.length) | 0]
     if (el.classList.contains('hit')) continue
     el.classList.add('hit')
@@ -2106,6 +2116,55 @@ function popDancers () {
 }
 
 makeDancers()
+
+/*
+ * Make them answer the pad on the START screen, which is the only screen they are
+ * visible on — every other one is drawn opaque on top of them.
+ *
+ * This cannot go through the normal input pipeline: that needs an AudioContext, and an
+ * AudioContext needs a tap on Play. Before Play there is no engine, so there are no
+ * hits, which is why they were sitting there ignoring the drumming.
+ *
+ * A raw devicemotion listener has no such requirement, and decoration has no business
+ * depending on the measurement stack anyway: nothing here is timed, scored or trusted.
+ * It asks one question — did the tablet just get knocked — and it does not care when.
+ */
+function watchIdleDrumming () {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  if (!window.DeviceMotionEvent) return
+
+  const recent = []
+  let last = 0
+
+  window.addEventListener('devicemotion', (e) => {
+    // Only while the start screen is up: elsewhere they are hidden, and spending
+    // anything on invisible animation during an exercise is worse than pointless.
+    if (!$('screen-start').classList.contains('on')) return
+
+    const a = (e.acceleration && e.acceleration.x !== null)
+      ? e.acceleration
+      : e.accelerationIncludingGravity
+    if (!a) return
+    const mag = Math.sqrt((a.x || 0) ** 2 + (a.y || 0) ** 2 + (a.z || 0) ** 2)
+
+    // A rolling baseline rather than a fixed threshold, because resting magnitude
+    // depends on how the tablet is lying and this device reports exact zeros at rest.
+    recent.push(mag)
+    if (recent.length > 60) recent.shift()
+    if (recent.length < 20) return
+    const sorted = [...recent].sort((x, y) => x - y)
+    const mid = sorted[sorted.length >> 1]
+    const high = sorted[Math.floor(sorted.length * 0.9)]
+    const threshold = mid + Math.max((high - mid) * 2, MOTION.minThreshold)
+
+    const now = performance.now()
+    if (mag > threshold && now - last > 120) {
+      last = now
+      popDancers()
+    }
+  })
+}
+watchIdleDrumming()
 
 // ------------------------------------------------------------------ misc
 

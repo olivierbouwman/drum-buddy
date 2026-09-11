@@ -545,6 +545,7 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
  * read — it is behind every screen at z-index 1.
  */
 #dancers { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 1; }
+#dancers.off { display: none; }
 #dancers i {
   position: absolute; bottom: -12vh;
   font-size: var(--size, 22px);
