@@ -199,12 +199,6 @@ export function summarise (notes, hits, beatS) {
 function detectWholeBeatShift (notes, hits, beatS) {
   if (notes.length < 4 || hits.length < 4) return 0
 
-  const displacement = median(hits.map((h) => h.time)) - median(notes.map((n) => n.time))
-  if (Math.abs(displacement) < 0.5 * beatS) return 0
-
-  const shift = Math.round(displacement / beatS)
-  if (shift === 0) return 0
-
   const tol = Math.min(0.25 * beatS, 0.12)
   const coverage = (offsetS) => {
     let c = 0
@@ -214,8 +208,32 @@ function detectWholeBeatShift (notes, hits, beatS) {
     }
     return c
   }
+
+  /*
+   * Only judge displacement when she played roughly the right NUMBER of notes.
+   *
+   * Being a whole beat out means playing the right rhythm in the wrong place, so the
+   * counts still match. A pile of extra hits means something else entirely — and it
+   * wrecks the median this test relies on.
+   *
+   * Measured on the real tablet: 32 of 32 notes matched with 30 ms of spread and a
+   * 14-note streak, and the guard still declared her a whole beat ahead and threw the
+   * score away. She had drummed through the count-in, and those thirteen extra hits
+   * dragged the median far enough to trip a test that was never meant to fire on
+   * playing that good. A false alarm here punishes a child for doing well, which is
+   * worse than missing the rare genuine case — she can hear that one herself.
+   */
+  if (hits.length > notes.length * 1.15) return 0
+
+  const atZero = coverage(0)
+  const displacement = median(hits.map((h) => h.time)) - median(notes.map((n) => n.time))
+  if (Math.abs(displacement) < 0.5 * beatS) return 0
+
+  const shift = Math.round(displacement / beatS)
+  if (shift === 0) return 0
+
   // Strictly better, not merely equal: a late starter ties, and is not displaced.
-  return coverage(shift * beatS) > coverage(0) ? shift : 0
+  return coverage(shift * beatS) > atZero ? shift : 0
 }
 
 /**

@@ -82,6 +82,23 @@ console.log('\nthe big one: a late player is never reported as perfect')
     `offset=${st.offsetMs} matched=${st.matched}`)
 }
 
+console.log('\ngood playing is never called displaced')
+{
+  // Reproduces a real session: every note hit accurately, plus a burst of extra notes
+  // played during the count-in. The guard used to declare this a whole beat out and
+  // throw the score away.
+  const ns = notes(32)
+  const played = ns.map((n) => ({ time: n.time + (Math.random() * 0.04 - 0.02) }))
+  const countInNoodling = [-3.2, -2.8, -2.4, -2.0, -1.6, -1.2, -0.8, -0.5, -0.3, -0.15, -0.05, 0.4, 0.9]
+    .map((d) => ({ time: ns[0].time + d }))
+  const all = [...countInNoodling, ...played].sort((a, b) => a.time - b.time)
+  const st = summarise(ns, all, BEAT)
+  check('extra hits before the first note do not fake a whole-beat shift', st.shift === 0,
+    `shift=${st.shift}`)
+  check('a well-played take still gets a score', st.enough, `enough=${st.enough}`)
+  check('and still reports a small offset', Math.abs(st.offsetMs) < 60, `${st.offsetMs.toFixed(0)} ms`)
+}
+
 console.log('\nmatching stays in order')
 {
   const ns = notes(6)
