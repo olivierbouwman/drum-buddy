@@ -62,6 +62,26 @@ whether the microphone route, the accelerometer route, or both are viable.
 `node tools/make-fake-recordings.mjs` writes synthetic takes so the analyser can be
 exercised without a drum pad.
 
+### What the first measurement found (2026-09-10, Android Chrome)
+
+Three things that guesswork would have got wrong:
+
+- **One biquad per band is not enough.** A single 2nd-order bandpass rolls off at only
+  6 dB/octave, leaving the 900 Hz metronome click barely 13 dB down inside the 2.5 kHz
+  band — so it triggered the detector as readily as a real drum hit. An FFT view of the
+  same bands looks perfectly clean and hides this completely. Cascading three biquads
+  took false triggers from the metronome from 6 to **0**, with real hits preserved.
+- **Round-trip latency is 353 ms** — very high — but with a spread of **0.0 ms** across
+  ten clicks. The original plan refused to score above 250 ms, on the theory that high
+  latency means Bluetooth and therefore drift. That rule would have locked this device
+  out for nothing: a large constant subtracts as cleanly as a small one. The refusal is
+  now based on whether the number holds still, not how big it is.
+- **The accelerometer is a confirmation sensor, not a timing source.** It feels hits
+  clearly (21 dB spike-to-rest at 60 Hz), but its timestamps scatter by ~38 ms against
+  the microphone — far worse than the 4.8 ms the sample rate implies, because
+  `DeviceMotionEvent` delivery waits on the main thread. So it answers "did a hit
+  happen" (immune to bleed and room noise) while the microphone answers "exactly when".
+
 ## How it's put together
 
 | File | What it does |

@@ -39,9 +39,23 @@ export const SCHEDULER = {
   countInBeats: 4,
 }
 
-/** PHASE-0: replace with the bands tools/analyse.mjs recommends for the real pad. */
+/**
+ * MEASURED on the real pad, sticks, speaker and room (2026-09-10, Android Chrome).
+ * See tools/analyse.mjs and tools/tune.mjs; re-run those if the hardware changes.
+ *
+ * The click sits at 900 Hz and dominates 800 Hz-1 kHz (-41 dBFS). Her softest hits are
+ * 22-33 dB above the bleed everywhere from 2.5-10 kHz, so that is where we listen.
+ */
 export const DETECTOR = {
-  bands: [2500, 3500, 5000, 7000, 10000, 14000],
+  bands: [2500, 3150, 4000, 5000, 6300, 8000],
+  /**
+   * Biquads cascaded per band. NOT cosmetic: one biquad rolls off at only 6 dB/octave,
+   * leaving the 900 Hz click barely 13 dB down inside the 2.5 kHz band, and it
+   * triggered the detector as readily as a real hit. Measured against take 1 (metronome
+   * playing, nobody drumming): 1 stage gave 6 false triggers, 2 gave 0, 3 gave 0 with
+   * more margin. An FFT view of the bands looks clean and hides this entirely.
+   */
+  stages: 3,
   q: 2.5,
   fastTauMs: 1.0,
   slowTauMs: 30,
@@ -50,7 +64,13 @@ export const DETECTOR = {
   bandsNeeded: 4,           // of 6 — a stick hits every band, speaker distortion hits 2-3
   agreementMs: 1.5,
   maxRiseMs: 4,             // slower attacks are speech, not sticks
-  refractoryMs: 70,
+  /**
+   * Fallback only — the real value comes from refractoryForSpacing() in dsp-core.js,
+   * derived from the note spacing the exercise actually asks for. Measured: strikes
+   * came as close as 88 ms during fast playing, so a fixed 70 ms would let bounce
+   * through while a fixed 150 ms would swallow genuinely fast playing.
+   */
+  refractoryMs: 120,
   /**
    * Stick bounce rejection. Careful here: the second note of a DOUBLE stroke is a real
    * note and is often quieter than the first, so these thresholds must stay well below
@@ -61,14 +81,25 @@ export const DETECTOR = {
   bounceRejectDb: 9,
 }
 
+/**
+ * Accelerometer. MEASURED: it feels hits clearly (21 dB spike-to-rest, 60 Hz), but its
+ * TIMESTAMPS scatter by ~38 ms against the microphone — far worse than the 4.8 ms the
+ * 60 Hz sample rate implies, because DeviceMotionEvent delivery waits on the main
+ * thread. Against her ~50 ms natural scatter that would inflate every reading.
+ *
+ * So it is a confirmation sensor, not a timing source: it says a hit HAPPENED (immune
+ * to metronome bleed and room noise), and the microphone says exactly WHEN.
+ */
 export const MOTION = {
-  minRateHz: 25,        // below this the sensor is useless for timing
+  minRateHz: 25,        // below this the sensor is useless even for confirmation
   spikeOverRest: 3.0,   // magnitude ratio that counts as a hit
   refractoryMs: 90,
+  timingTrusted: false, // never take the timestamp from this sensor while the mic works
 }
 
 export const FUSION = {
-  agreeMs: 30,          // mic and motion this close = the same hit
+  /** Generous, because the accelerometer's own timestamps scatter by ~38 ms. */
+  agreeMs: 90,
 }
 
 export const CALIBRATION = {
@@ -79,8 +110,17 @@ export const CALIBRATION = {
   acceptSpreadMs: 8,     // MAD-derived; above this we don't trust the number
   plausibleMinMs: 15,
   plausibleMaxMs: 400,
-  warnAboveMs: 120,      // probably a Bluetooth speaker
-  refuseAboveMs: 250,
+  /**
+   * MEASURED 353 ms round trip on Android Chrome — with a spread of 0.0 ms across ten
+   * clicks. The original plan refused to score above 250 ms on the assumption that a
+   * high latency means Bluetooth and therefore a DRIFTING latency. That rule would have
+   * locked this device out for no reason: a large constant subtracts just as cleanly as
+   * a small one. What actually matters is whether the number holds still, so the refusal
+   * is now on instability, not magnitude.
+   */
+  warnAboveMs: 250,
+  refuseAboveMs: 600,
+  refuseIfSpreadAboveMs: 12,
   storageKey: 'drum-practice.latency.v1',
 }
 

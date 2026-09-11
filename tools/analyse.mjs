@@ -147,6 +147,63 @@ const avgSpectra = (list) => {
   })
 }
 
+/**
+ * Find where each metronome click actually landed in the recording.
+ *
+ * Matched filtering against the exact waveform the recorder synthesised, narrowly
+ * bandpassed at the click frequency. A plain "loudest sample near the expected time"
+ * search is not good enough: it locks onto handling noise or a stray knock, and then
+ * every bleed measurement downstream is taken from the wrong samples — which is
+ * precisely the mistake this replaced.
+ *
+ * The gap between scheduled and found is the round-trip latency, for free.
+ */
+function locateClicks (pcm, rate, meta) {
+  const n = Math.round(rate * 0.03)
+  const ref = new Float64Array(n)
+  for (let i = 0; i < n; i++) {
+    const hann = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (n - 1)))
+    ref[i] = Math.sin((2 * Math.PI * 900 * i) / rate) * hann * 0.25
+  }
+  const narrow = (x) => {
+    const w0 = (2 * Math.PI * 900) / rate
+    const al = Math.sin(w0) / (2 * 8)
+    const a0 = 1 + al
+    const b0 = al / a0, b2 = -al / a0, a1 = (-2 * Math.cos(w0)) / a0, a2 = (1 - al) / a0
+    const y = new Float64Array(x.length)
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0
+    for (let i = 0; i < x.length; i++) {
+      const v = b0 * x[i] + b2 * x2 - a1 * y1 - a2 * y2
+      x2 = x1; x1 = x[i]; y2 = y1; y1 = v; y[i] = v
+    }
+    return y
+  }
+  const sig = narrow(pcm)
+  const rf = narrow(ref)
+
+  const t0 = meta.recordStartContextTime
+  const samples = []
+  const delays = []
+  for (const ct of meta.clickContextTimes) {
+    const c = ct - t0
+    const from = Math.max(0, Math.round((c - 0.02) * rate))
+    const to = Math.min(sig.length - n, Math.round((c + 0.6) * rate))
+    let bestC = 0, bestI = -1
+    for (let i = from; i < to; i++) {
+      let dot = 0, sn = 0
+      for (let k = 0; k < n; k += 4) { dot += sig[i + k] * rf[k]; sn += sig[i + k] * sig[i + k] }
+      const cc = dot / (Math.sqrt(sn) || 1e-12)
+      if (cc > bestC) { bestC = cc; bestI = i }
+    }
+    if (bestI >= 0) { samples.push(bestI); delays.push(((bestI / rate) - c) * 1000) }
+  }
+  if (!delays.length) return { samples: [], medianDelayMs: null, spreadMs: 0 }
+  const sorted = [...delays].sort((a, b) => a - b)
+  const med = sorted[Math.floor(sorted.length / 2)]
+  const spread = sorted.map((x) => Math.abs(x - med)).sort((a, b) => a - b)[Math.floor(sorted.length / 2)] * 1.4826
+  return { samples, medianDelayMs: med, spreadMs: spread }
+}
+
 // ------------------------------------------------------------------ onsets
 
 /** One-pole high-pass, used only to make peak-picking robust. */
@@ -179,18 +236,50 @@ function findOnsets (pcm, rate, { refractoryMs = 100, threshDb = 12 } = {}) {
   const thresh = floor * Math.pow(10, threshDb / 20)
 
   const refractory = Math.round((refractoryMs / 1000) * rate / hop)
+  // Cap how far the attack search may walk back. Without this, a hit with a long
+  // ringing decay lets two separate peaks walk back onto the SAME start sample, and
+  // one strike gets reported twice — which inflates every count downstream.
+  const maxWalkBack = Math.round((0.015 * rate) / hop)
+
   const hits = []
   let i = 1
   while (i < env.length - 1) {
     if (env[i] > thresh && env[i] >= env[i - 1] && env[i] >= env[i + 1]) {
-      // Walk back to where the envelope left the floor — closer to the true attack.
       let s = i
-      while (s > 0 && env[s] > floor * 2) s--
-      hits.push({ sample: s * hop, peak: env[i] })
+      const limit = Math.max(0, i - maxWalkBack)
+      while (s > limit && env[s] > floor * 2) s--
+      const sample = s * hop
+      const prev = hits[hits.length - 1]
+      // Never emit an onset at or before the previous one.
+      if (!prev || sample > prev.sample) hits.push({ sample, peak: env[i] })
       i += refractory
     } else i++
   }
   return { hits, floor }
+}
+
+/**
+ * Gaps between consecutive hits. This is how you tell real playing from a detector
+ * counting one strike twice: genuine notes cluster around the beat spacing, while
+ * bounce and double-triggering pile up below ~150 ms.
+ */
+function reportGaps (hits, rate) {
+  if (hits.length < 3) return
+  const gaps = hits.slice(1).map((h, i) => ((h.sample - hits[i].sample) / rate) * 1000)
+  const close = gaps.filter((g) => g < 150)
+  const buckets = new Map()
+  for (const g of gaps) {
+    const k = g < 150 ? '<150' : String(Math.round(g / 100) * 100)
+    buckets.set(k, (buckets.get(k) || 0) + 1)
+  }
+  const keys = [...buckets.keys()].sort((a, b) => (a === '<150' ? -1 : b === '<150' ? 1 : a - b))
+  console.log('  gaps between hits (ms):')
+  for (const k of keys) console.log(`    ${k.padStart(5)}  ${'#'.repeat(buckets.get(k))} (${buckets.get(k)})`)
+  if (close.length) {
+    console.log(`  !! ${close.length} gap(s) under 150 ms — stick bounce, or two counts of one hit.`)
+    console.log(`     shortest ${Math.min(...close).toFixed(0)} ms; the detector refractory must exceed that.`)
+  }
+  return { gaps, close }
 }
 
 // ------------------------------------------------------------------ reporting
@@ -259,31 +348,21 @@ if (takes.roomtone) {
 
 // --- metronome bleed -------------------------------------------------------
 let bleedSpec = BANDS.map(() => -200)
+let roundTripMs = null
 if (takes.bleed) {
   const { pcm, meta } = takes.bleed
   const slices = []
   if (meta && meta.clickContextTimes && meta.clickContextTimes.length) {
-    // Locate each click by its scheduled time, plus a search for the local peak —
-    // the recording starts at recordStartContextTime, and the bleed arrives late by
-    // the round-trip latency we're not measuring here.
-    const t0 = meta.recordStartContextTime
-    for (const t of meta.clickContextTimes) {
-      const nominal = Math.round((t - t0) * rate)
-      let best = nominal
-      let bestV = 0
-      for (let s = nominal; s < nominal + rate * 0.4 && s < pcm.length; s++) {
-        const v = Math.abs(pcm[s])
-        if (v > bestV) { bestV = v; best = s }
-      }
-      if (bestV > 1e-4) slices.push(bandEnergy(pcm, best - 128, 2048, rate))
+    const found = locateClicks(pcm, rate, meta)
+    roundTripMs = found.medianDelayMs
+    for (const s of found.samples) slices.push(bandEnergy(pcm, s - 128, 2048, rate))
+    console.log(`Metronome clicks located in bleed take: ${found.samples.length} of ${meta.clickContextTimes.length}`)
+    if (roundTripMs !== null) {
+      console.log(`Round-trip latency (speaker -> air -> mic): ${roundTripMs.toFixed(0)} ms` +
+                  `  (steadiness ${found.spreadMs.toFixed(1)} ms)`)
     }
   }
-  if (!slices.length) {
-    const { hits } = findOnsets(pcm, rate, { refractoryMs: 300, threshDb: 10 })
-    for (const h of hits) slices.push(bandEnergy(pcm, h.sample, 2048, rate))
-  }
   bleedSpec = avgSpectra(slices)
-  console.log(`Metronome clicks located in bleed take: ${slices.length}`)
 }
 
 // --- drum hits -------------------------------------------------------------
@@ -303,6 +382,7 @@ if (takes.hits) {
   console.log(`Drum hits detected: ${nHits} (${soft.length} softest / ${loud.length} loudest analysed)`)
   const dur = pcm.length / rate
   console.log(`  ~${(nHits / dur).toFixed(1)} hits/sec over ${dur.toFixed(1)}s`)
+  reportGaps(hits, rate)
 }
 
 // --- the table that decides the design -------------------------------------
