@@ -770,6 +770,14 @@ function finishExercise () {
     $('done-badge').textContent = stats.shift > 0
       ? 'You were a whole beat behind — try again!'
       : 'You were a whole beat ahead — try again!'
+  } else if (stats.farOff) {
+    // Steady, but nowhere near the beat. Half a beat out is too far to match a note and
+    // not far enough to be a whole-beat shift, so without this she gets a blank
+    // scoreboard and no idea what happened — which reads as a broken app, not feedback.
+    $('done-title').textContent = 'Nearly!'
+    $('done-badge').textContent = stats.farOff.direction === 'late'
+      ? '🐢 A bit late — try to hit right when you hear the beep!'
+      : '🐰 A bit early — wait for the beep!'
   } else if (!stats.enough) {
     $('done-title').textContent = 'Let’s try that again'
     $('done-badge').textContent = 'I didn’t catch many hits that time'
