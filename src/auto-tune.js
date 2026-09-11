@@ -27,9 +27,38 @@
  * cannot skew her timing.
  */
 
-const MIN_MARGIN_DB = 10      // below this a band is more trouble than it's worth
+/**
+ * Below this a band is more trouble than it's worth.
+ *
+ * Set low on purpose. Multiband agreement — "at least four of six must fire together" —
+ * turns out to be the strongest discriminator against the metronome, so THINNING the
+ * band set weakens the very rule that does the work: drop to three bands and the rule
+ * quietly becomes "at least two", and click rejection got worse rather than better.
+ * Only bands that are genuinely useless should go.
+ */
+const MIN_MARGIN_DB = 4
+/**
+ * A band is also dropped if it is this far behind the best band available.
+ *
+ * A purely absolute threshold cannot win here. Set it high and the band set gets thin,
+ * which hollows out the agreement rule that does most of the work. Set it low and the
+ * metronome's OWN band sneaks back in on a slim positive margin — 1 kHz measured +4.4 dB
+ * and was admitted, which is the one band that must never be. Judging each band against
+ * the best one available separates those cases cleanly.
+ */
+const RELATIVE_DB = 18
 const MIN_BLEED_SAMPLES = 5
 const MIN_HIT_SAMPLES = 4
+/**
+ * Hits needed before an absolute level gate is applied at all.
+ *
+ * Four warm-up whacks are not a fair sample of how she plays. Setting the gate from
+ * them made the app deaf to normal playing: she hits hard to wake the band, the gate is
+ * pinned to that, and everything quieter is silently dropped. Band separation alone
+ * already gives zero false triggers from the metronome, so the gate is belt-and-braces
+ * and can afford to wait for real evidence.
+ */
+const MIN_HITS_FOR_GATE = 12
 const KEEP = 40               // rolling window per band
 
 const percentile = (arr, p) => {
@@ -109,26 +138,44 @@ export class AutoTune {
     if (!this.enoughData) return null
 
     const margins = []
-    const mask = []
     for (let b = 0; b < this.n; b++) {
       // Pessimistic on both sides: loud bleed against quiet hits.
       const bleedHigh = percentile(this.bleed[b], 0.8)
       const roomHigh = this.room[b].length >= 5 ? percentile(this.room[b], 0.9) : 0
       const hitLow = percentile(this.hits[b], 0.25)
       // A band has to beat whichever interferer is louder — the speaker or the room.
-      const m = db(hitLow, Math.max(bleedHigh, roomHigh))
-      margins.push(m)
-      mask.push(m >= MIN_MARGIN_DB ? 1 : 0)
+      margins.push(db(hitLow, Math.max(bleedHigh, roomHigh)))
     }
 
-    // If nothing clears the bar, keep the best few rather than going deaf. A degraded
-    // detector still lets her play; an empty one looks like the app ignoring her.
-    if (mask.every((v) => !v)) {
-      const ranked = margins.map((m, i) => [m, i]).sort((a, b) => b[0] - a[0])
-      for (const [, i] of ranked.slice(0, 3)) mask[i] = 1
+    const best = Math.max(...margins)
+    const bar = Math.max(MIN_MARGIN_DB, best - RELATIVE_DB)
+    const mask = margins.map((m) => (m >= bar ? 1 : 0))
+
+    /*
+     * Prefer a wide band set, because agreement is what rejects the metronome and a thin
+     * set hollows that rule out. But never widen by re-admitting a band the interferer
+     * OWNS: force-keeping the top few by margin would happily switch the click's own
+     * band back on, which is worse than having fewer bands.
+     */
+    this.problem = null
+    const ranked = margins.map((m, i) => [m, i]).sort((a, b) => b[0] - a[0])
+    const MIN_BANDS = 3
+
+    if (mask.filter(Boolean).length < MIN_BANDS) {
+      // Widen, but only into bands that are at least not actively harmful.
+      for (const [m, i] of ranked) {
+        if (mask.filter(Boolean).length >= MIN_BANDS) break
+        if (m > 0) mask[i] = 1
+      }
       this.problem = 'weakSeparation'
-    } else {
-      this.problem = null
+    }
+    if (mask.filter(Boolean).length < MIN_BANDS) {
+      // Nothing here separates at all. Take the least bad rather than go deaf, and say so.
+      for (const [, i] of ranked) {
+        if (mask.filter(Boolean).length >= MIN_BANDS) break
+        mask[i] = 1
+      }
+      this.problem = 'noSeparation'
     }
 
     // Totals must be taken over the ENABLED bands only. Summing across every candidate
@@ -148,12 +195,16 @@ export class AutoTune {
     const hitTotals = sumOver(this.hits)
     const bleedTotals = sumOver(this.bleed)
 
-    // Gate between the loudest bleed and her softest hits, then clamped so it can never
-    // climb above the hits themselves.
+    // Gate between the loudest bleed and her softest hits — but only once there is
+    // enough evidence, and never close enough to her quietest hit to swallow it.
     const softHit = percentile(hitTotals, 0.1)
     const loudBleed = percentile(bleedTotals, 0.9)
-    const wanted = Math.max(loudBleed * 2.0, softHit * 0.3)
-    const minLevel = Math.min(wanted, softHit * 0.75)
+    let minLevel = 0
+    if (hitTotals.length >= MIN_HITS_FOR_GATE) {
+      // A third of her quietest observed hit leaves three times the headroom the old
+      // three-quarters did, which is the difference between cautious and deaf.
+      minLevel = Math.min(Math.max(loudBleed * 1.5, softHit * 0.15), softHit * 0.35)
+    }
 
     // Only worth flagging when there is genuinely no room between them. A few dB of
     // headroom is tight but perfectly workable, and crying wolf at 6 dB would have the

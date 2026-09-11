@@ -87,7 +87,12 @@ export const DETECTOR = {
   triggerOverFloor: 4.0,    // ...and the noise floor by this (+12 dB)
   bandsNeeded: 4,           // of 6 — a stick hits every band, speaker distortion hits 2-3
   agreementMs: 1.5,
-  maxRiseMs: 4,             // slower attacks are speech, not sticks
+  /**
+   * Slower attacks are speech, not sticks. Loosened from 4 ms: the gate only needs to
+   * separate a stick (1-2 ms) from a sibilant (10 ms+), so there is no reason to sit
+   * right on top of the thing being measured.
+   */
+  maxRiseMs: 8,
   /**
    * Fallback only — the real value comes from refractoryForSpacing() in dsp-core.js,
    * derived from the note spacing the exercise actually asks for. Measured: strikes

@@ -120,15 +120,26 @@ export class OnsetDetector {
       this.enabled[b] = mask[b] ? 1 : 0
       on += this.enabled[b]
     }
-    if (on < 2) { this.enabled.fill(1); on = this.n }
+    // Re-enabling EVERY band as a fallback would switch the interferer's own band back
+    // on, which is the opposite of what the caller was trying to do. Only guard against
+    // the truly degenerate case of nothing enabled at all.
+    if (on < 1) { this.enabled.fill(1); on = this.n }
     this.enabledCount = on
   }
 
   setMinLevel (v) { this.minLevel = Math.max(0, v || 0) }
 
-  /** How many enabled bands must agree. Scaled so the rule survives disabling bands. */
+  /**
+   * How many enabled bands must agree.
+   *
+   * This is the strongest thing separating a stick from the metronome: a stick excites
+   * every band at once, speaker distortion lights up two or three. Kept as a high
+   * fraction, and never below three, so the rule cannot be hollowed out by disabling
+   * bands.
+   */
   get needAgree () {
-    return Math.max(2, Math.min(this.enabledCount, Math.round(this.enabledCount * 0.67)))
+    return Math.max(Math.min(3, this.enabledCount),
+      Math.min(this.enabledCount, Math.round(this.enabledCount * 0.7)))
   }
 
   /**
@@ -180,29 +191,26 @@ export class OnsetDetector {
 
       if (agree >= this.needAgree && sum > this.minLevel &&
           this.frame - this.lastOnset >= this.refractorySamples) {
-        const riseMs = this._riseTime(sum)
-        // Speech sibilants ('s', 't' from someone talking) rise over 10 ms or more;
-        // a stick on rubber is under 2 ms. Cheapest useful discriminator there is.
-        if (riseMs <= cfg.maxRiseMs) {
-          const quieterThanLast = this.lastPeak > 0
-            ? 20 * Math.log10(sum / this.lastPeak)
-            : 0
-          const isBounce =
-            this.frame - this.lastOnset < (cfg.bounceRejectMs / 1000) * this.rate &&
-            quieterThanLast <= -cfg.bounceRejectDb
-          if (!isBounce) {
-            if (this.held) out.push(this._release())
-            this.held = {
-              frame: this.frame,
-              strength: sum,
-              bands: agree,
-              riseMs,
-              levels: Array.from(this.fast),
-              until: this.frame + this.levelWindow,
-            }
-            this.lastOnset = this.frame
-            this.lastPeak = sum
+        const quieterThanLast = this.lastPeak > 0
+          ? 20 * Math.log10(sum / this.lastPeak)
+          : 0
+        const isBounce =
+          this.frame - this.lastOnset < (cfg.bounceRejectMs / 1000) * this.rate &&
+          quieterThanLast <= -cfg.bounceRejectDb
+        if (!isBounce) {
+          if (this.held) out.push(this._release())
+          // Rise time is judged at release, not here. It cannot be measured yet: this
+          // is the START of the attack, and the rise has not happened.
+          this.held = {
+            frame: this.frame,
+            strength: sum,
+            bands: agree,
+            levels: Array.from(this.fast),
+            peakFrame: this.frame,
+            until: this.frame + this.levelWindow,
           }
+          this.lastOnset = this.frame
+          this.lastPeak = sum
         }
       }
       // While an onset is held, keep the highest level seen in each band.
@@ -210,8 +218,11 @@ export class OnsetDetector {
         for (let b = 0; b < this.n; b++) {
           if (this.fast[b] > this.held.levels[b]) this.held.levels[b] = this.fast[b]
         }
-        if (sum > this.held.strength) this.held.strength = sum
-        if (this.frame >= this.held.until) out.push(this._release())
+        if (sum > this.held.strength) { this.held.strength = sum; this.held.peakFrame = this.frame }
+        if (this.frame >= this.held.until) {
+          const rel = this._release()
+          if (rel) out.push(rel)
+        }
       }
 
       this.frame++

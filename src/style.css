@@ -169,6 +169,18 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 
 .meter-wrap { width: min(70vw, 20rem); }
 .meter-wrap.small { width: min(40vw, 9rem); }
+
+/* Two meters: what the microphone hears, and what the pad feels. Having both visible
+   is the difference between "it isn't working" and knowing which half isn't. */
+.meters { display: flex; flex-direction: column; gap: .3rem; width: min(70vw, 20rem); }
+.meters.small { width: min(42vw, 11rem); gap: .22rem; }
+.meter-row { display: flex; align-items: center; gap: .45rem; }
+.meter-row span { font-size: .85rem; width: 1.2em; text-align: center; }
+.meter-row .meter { flex: 1 1 auto; }
+/* A sensor that isn't there reads as absent, not as silent. */
+.meter-row.off { opacity: .35; }
+.meter-row.off .meter { background: repeating-linear-gradient(
+  45deg, #ffffff10, #ffffff10 4px, transparent 4px, transparent 8px); }
 .meter {
   height: 10px; border-radius: 5px; overflow: hidden;
   background: #00000055; border: 1px solid var(--line);

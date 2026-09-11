@@ -27,8 +27,12 @@ export class MotionInput extends InputSource {
     this._samples = 0
     this._since = 0
     this.error = null
+    this._onLevel = () => {}
     this._handler = (e) => this._onMotion(e)
   }
+
+  /** Live magnitude relative to the trigger threshold, for the on-screen meter. */
+  onLevel (fn) { this._onLevel = fn }
 
   /** Must be called from a user gesture on iOS. */
   async init () {
@@ -72,6 +76,8 @@ export class MotionInput extends InputSource {
 
     const now = this.engine.now
     const threshold = this.rest * MOTION.spikeOverRest
+    // 1.0 means "just triggered", so the meter reads as a fraction of the bar.
+    this._onLevel(mag / (threshold || 1))
 
     if (mag > threshold) {
       if (mag > this.peak) { this.peak = mag; this.peakAt = now }

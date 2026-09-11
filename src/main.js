@@ -129,10 +129,8 @@ async function setUpSensors () {
   if (micOk) {
     autoTune = new AutoTune(DETECTOR.bands)
     mic.onLevel((peak, levels) => {
-      const el = $('warmup-level') || $('play-level')
-      if (el) el.style.width = Math.min(100, peak * 160) + '%'
-      const p = $('play-level')
-      if (p) p.style.width = Math.min(100, peak * 160) + '%'
+      setMeter('level', peak * 1.6)
+      watchForDeafness(peak)
 
       // The room itself, sampled only in the gaps: far enough after a click that its
       // tail has died away, and nowhere near a stick.
@@ -152,6 +150,15 @@ async function setUpSensors () {
       const clean = inSilentWindow && Math.abs(t - lastHitAt) > 0.15
       if (clean && levels) autoTune.sampleBleed(levels)
     })
+  }
+
+  if (motionOk) {
+    motion.onLevel((v) => setMeter('motion', v))
+  } else {
+    for (const id of ['warmup-motion-row', 'play-motion-row']) {
+      const el = $(id)
+      if (el) el.classList.add('off')
+    }
   }
 
   if (micOk || motionOk) {
@@ -295,6 +302,44 @@ async function runWarmup () {
   $('btn-skip-warmup').onclick = () => { clearTimeout(bail); off(); applyAutoTune(); startExercise(state.exerciseIndex) }
 }
 
+/** Drive both meters at once; they exist on the warm-up and the practice screens. */
+function setMeter (which, fraction) {
+  const w = Math.max(0, Math.min(100, fraction * 100))
+  for (const id of ['warmup-' + which, 'play-' + which]) {
+    const el = $(id)
+    if (el) el.style.width = w + '%'
+  }
+}
+
+/**
+ * Never be silently deaf.
+ *
+ * The learned level gate is meant to reject the metronome, but a gate set from too few
+ * or too loud a sample can reject HER — and from her side that looks exactly like the
+ * app ignoring her, with no clue why. So watch: if the microphone is clearly picking up
+ * sound during an exercise and yet nothing is being detected, throw the gate away and
+ * reopen every band. A false trigger is a far smaller failure than deafness.
+ */
+let loudSince = 0
+let deafnessHandled = false
+
+function watchForDeafness (peak) {
+  if (!scheduler || !scheduler.running || !mic || !mic.available) { loudSince = 0; return }
+  const now = engine.now
+  if (peak < 0.02) { loudSince = 0; return }          // nothing to hear; not deafness
+  if (!loudSince) loudSince = now
+  if (deafnessHandled) return
+  if (now - lastHitAt < 3) { loudSince = 0; return }  // hits are arriving; all is well
+
+  if (now - loudSince > 4) {
+    deafnessHandled = true
+    mic.tune({ mask: DETECTOR.bands.map(() => 1), minLevel: 0 })
+    if (autoTune) autoTune.minLevel = 0
+    toast('Listening harder…', 2500)
+    if (debug) console.warn('[drum-buddy] deafness watchdog fired — gate and bands reset')
+  }
+}
+
 /** Subscribe to hits; returns an unsubscribe. */
 function onHits (fn) {
   const wrapped = (hit) => fn(hit)
@@ -327,6 +372,8 @@ function startExercise (index) {
   $('play-sr').textContent =
     `${ex.name}. ${ex.blurb} ${ex.tip} Count: ${ex.count}. Tempo ${state.bpm} beats per minute.`
 
+  deafnessHandled = false
+  loudSince = 0
   visuals.setup(ex.beatsPerBar, SCHEDULER.countInBeats + ex.beatsPerBar * ex.bars,
     ex.count.trim().split(/\s+/))
   visuals.clearHands()

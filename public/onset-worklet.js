@@ -91,7 +91,7 @@ var OnsetDetector = class {
 			this.enabled[b] = mask[b] ? 1 : 0;
 			on += this.enabled[b];
 		}
-		if (on < 2) {
+		if (on < 1) {
 			this.enabled.fill(1);
 			on = this.n;
 		}
@@ -100,9 +100,16 @@ var OnsetDetector = class {
 	setMinLevel(v) {
 		this.minLevel = Math.max(0, v || 0);
 	}
-	/** How many enabled bands must agree. Scaled so the rule survives disabling bands. */
+	/**
+	* How many enabled bands must agree.
+	*
+	* This is the strongest thing separating a stick from the metronome: a stick excites
+	* every band at once, speaker distortion lights up two or three. Kept as a high
+	* fraction, and never below three, so the rule cannot be hollowed out by disabling
+	* bands.
+	*/
 	get needAgree() {
-		return Math.max(2, Math.min(this.enabledCount, Math.round(this.enabledCount * .67)));
+		return Math.max(Math.min(3, this.enabledCount), Math.min(this.enabledCount, Math.round(this.enabledCount * .7)));
 	}
 	/**
 	* @param {Float32Array} block
@@ -144,28 +151,31 @@ var OnsetDetector = class {
 			this.hist[this.histPos] = sum;
 			this.histPos = (this.histPos + 1) % this.histLen;
 			if (agree >= this.needAgree && sum > this.minLevel && this.frame - this.lastOnset >= this.refractorySamples) {
-				const riseMs = this._riseTime(sum);
-				if (riseMs <= cfg.maxRiseMs) {
-					const quieterThanLast = this.lastPeak > 0 ? 20 * Math.log10(sum / this.lastPeak) : 0;
-					if (!(this.frame - this.lastOnset < cfg.bounceRejectMs / 1e3 * this.rate && quieterThanLast <= -cfg.bounceRejectDb)) {
-						if (this.held) out.push(this._release());
-						this.held = {
-							frame: this.frame,
-							strength: sum,
-							bands: agree,
-							riseMs,
-							levels: Array.from(this.fast),
-							until: this.frame + this.levelWindow
-						};
-						this.lastOnset = this.frame;
-						this.lastPeak = sum;
-					}
+				const quieterThanLast = this.lastPeak > 0 ? 20 * Math.log10(sum / this.lastPeak) : 0;
+				if (!(this.frame - this.lastOnset < cfg.bounceRejectMs / 1e3 * this.rate && quieterThanLast <= -cfg.bounceRejectDb)) {
+					if (this.held) out.push(this._release());
+					this.held = {
+						frame: this.frame,
+						strength: sum,
+						bands: agree,
+						levels: Array.from(this.fast),
+						peakFrame: this.frame,
+						until: this.frame + this.levelWindow
+					};
+					this.lastOnset = this.frame;
+					this.lastPeak = sum;
 				}
 			}
 			if (this.held) {
 				for (let b = 0; b < this.n; b++) if (this.fast[b] > this.held.levels[b]) this.held.levels[b] = this.fast[b];
-				if (sum > this.held.strength) this.held.strength = sum;
-				if (this.frame >= this.held.until) out.push(this._release());
+				if (sum > this.held.strength) {
+					this.held.strength = sum;
+					this.held.peakFrame = this.frame;
+				}
+				if (this.frame >= this.held.until) {
+					const rel = this._release();
+					if (rel) out.push(rel);
+				}
 			}
 			this.frame++;
 		}

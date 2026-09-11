@@ -57,7 +57,16 @@
   </div>
   <p class="instruction" id="warmup-msg" role="status" aria-live="polite">Listening…</p>
   <div class="hit-dots" id="warmup-dots" aria-hidden="true"></div>
-  <div class="meter-wrap"><div class="meter"><i id="warmup-level"></i></div></div>
+  <div class="meters">
+    <div class="meter-row">
+      <span aria-hidden="true">🎤</span>
+      <div class="meter" role="img" aria-label="Microphone level"><i id="warmup-level"></i></div>
+    </div>
+    <div class="meter-row" id="warmup-motion-row">
+      <span aria-hidden="true">🥁</span>
+      <div class="meter" role="img" aria-label="Pad wobble level"><i id="warmup-motion"></i></div>
+    </div>
+  </div>
   <button id="btn-skip-warmup" class="ghost">Skip</button>
 </section>
 
@@ -96,7 +105,16 @@
 
   <footer class="bar">
     <div class="streak" id="streak" aria-live="off"><b>0</b> in a row</div>
-    <div class="meter-wrap small"><div class="meter"><i id="play-level"></i></div></div>
+    <div class="meters small">
+      <div class="meter-row">
+        <span aria-hidden="true">🎤</span>
+        <div class="meter" role="img" aria-label="Microphone level"><i id="play-level"></i></div>
+      </div>
+      <div class="meter-row" id="play-motion-row">
+        <span aria-hidden="true">🥁</span>
+        <div class="meter" role="img" aria-label="Pad wobble level"><i id="play-motion"></i></div>
+      </div>
+    </div>
   </footer>
   <p class="sr-only" id="play-sr" aria-live="polite"></p>
 </section>
