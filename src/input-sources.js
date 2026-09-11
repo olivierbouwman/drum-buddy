@@ -74,23 +74,20 @@ export class TapInput extends InputSource {
 /**
  * Combines the microphone and the accelerometer.
  *
- * The roles are set by what the Phase 0 recordings actually showed, not by what the two
- * sensors could do in principle:
+ * The accelerometer leads. It is physically immune to the two hardest problems here —
+ * the metronome bleeding out of the speaker, and a noisy room — and on the real tablet
+ * it found 26 of 32 notes with 30 ms of spread, comfortably inside a beginner's own.
+ * It needs no learned bands, no bleed rejection and no thresholds tuned per room. The
+ * microphone, by contrast, has been the source of nearly every failure in this app, and
+ * in one session delivered pure silence for thirty-six seconds while reporting itself
+ * healthy.
  *
- *   - The MICROPHONE is the timing source. Its onsets are stamped on the audio render
- *     thread and are sample-accurate.
- *   - The ACCELEROMETER is a fallback and a corroboration signal. On the real pad the
- *     two sensors agreed on only 15 of 37 events, and where they did agree the offset
- *     between them scattered by 38 ms.
+ * The microphone still does the one thing the accelerometer cannot: measure absolute
+ * delay. A speaker can be heard coming back; a wrist cannot. So the split is that the
+ * pad says WHEN SHE HIT, and the microphone says HOW LATE EVERYTHING IS.
  *
- * That measured disagreement rules out two things I had planned. It is not reliable
- * enough to TIME a hit the microphone missed, and — more tempting, and more dangerous —
- * it is not reliable enough to VETO a microphone hit it failed to feel. Vetoing would
- * have thrown away real hits every time the pad damped a strike, and it would have
- * looked like the child missing notes rather than like a bug.
- *
- * So while the microphone works, the accelerometer only corroborates. It takes over
- * completely when there is no microphone, and then the app says timing is approximate.
+ * When both are working the constant offset between them is measured directly and used
+ * to bring the accelerometer's timing onto the microphone's reference.
  */
 export class FusedInput extends InputSource {
   constructor ({ mic, motion, agreeMs }) {
@@ -98,33 +95,76 @@ export class FusedInput extends InputSource {
     this.mic = mic
     this.motion = motion
     this.agreeMs = agreeMs
+    this.recentMic = []
     this.recentMotion = []
     this.confirmed = 0
     this.unconfirmed = 0
+    /** median(motion time - mic time) for the same strike, in seconds. */
+    this.motionOffsetS = 0
+    this._offsets = []
+    this.motionHits = 0
+
+    if (motion) {
+      motion.onHit((hit) => {
+        this.motionHits++
+        const t = hit.time
+        this.recentMotion.push(t)
+        if (this.recentMotion.length > 40) this.recentMotion.shift()
+        this._pairUp(t, 'motion')
+        if (this.preferMotion) {
+          this.emit({
+            ...hit,
+            time: t - this.motionOffsetS,
+            corroborated: this._sawMic(t),
+            timingTrusted: true,
+            source: 'motion',
+          })
+        }
+      })
+    }
 
     if (mic) {
       mic.onHit((hit) => {
         const t = hit.time
-        this.recentMotion = this.recentMotion.filter((m) => (t - m) * 1000 < this.agreeMs * 3)
-        const seen = this.recentMotion.some((m) => Math.abs(t - m) * 1000 <= this.agreeMs)
+        this.recentMic.push(t)
+        if (this.recentMic.length > 40) this.recentMic.shift()
+        this._pairUp(t, 'mic')
+        if (this.preferMotion) return          // the pad already reported this strike
+        const seen = this._sawMotion(t)
         if (seen) this.confirmed++
         else this.unconfirmed++
         this.emit({ ...hit, corroborated: seen, timingTrusted: true })
       })
     }
 
-    if (motion) {
-      motion.onHit((hit) => {
-        this.recentMotion.push(hit.time)
-        // Takes over whenever the microphone is not actually delivering — a granted
-        // stream that produces nothing is worse than no stream, because it looks fine.
-        if (!this.micWorking) {
-          this.emit({ ...hit, corroborated: false, timingTrusted: true, source: 'motion' })
-        }
-      })
-    }
-
     this.available = !!((mic && mic.available) || (motion && motion.available))
+  }
+
+  _sawMotion (t) { return this.recentMotion.some((m) => Math.abs(t - m) * 1000 <= this.agreeMs) }
+  _sawMic (t) { return this.recentMic.some((m) => Math.abs(t - m) * 1000 <= this.agreeMs) }
+
+  /**
+   * Learn the constant gap between the two sensors from strikes they both saw.
+   *
+   * The microphone's timestamps are sample-accurate and already latency-corrected, so
+   * the difference is exactly what has to come off the accelerometer's. Median, because
+   * a few mismatched pairs should not move it.
+   */
+  _pairUp (t, from) {
+    const other = from === 'motion' ? this.recentMic : this.recentMotion
+    let best = null
+    for (const o of other) {
+      const d = Math.abs(t - o) * 1000
+      if (d <= this.agreeMs && (best === null || d < Math.abs(t - best) * 1000)) best = o
+    }
+    if (best === null) return
+    const delta = from === 'motion' ? t - best : best - t
+    this._offsets.push(delta)
+    if (this._offsets.length > 25) this._offsets.shift()
+    if (this._offsets.length >= 6) {
+      const s = [...this._offsets].sort((a, b) => a - b)
+      this.motionOffsetS = s[s.length >> 1]
+    }
   }
 
   /** A granted microphone that delivers nothing is not a working microphone. */
@@ -132,15 +172,20 @@ export class FusedInput extends InputSource {
     return !!(this.mic && this.mic.available && this.mic.receiving)
   }
 
+  /** The pad leads whenever it is there and actually feeling her play. */
+  get preferMotion () {
+    return !!(this.motion && this.motion.available)
+  }
+
   /** Which sensor is actually deciding when a hit happened. */
   get timingSource () {
+    if (this.preferMotion) return 'motion'
     if (this.micWorking) return 'mic'
-    if (this.motion && this.motion.available) return 'motion'
     if (this.mic && this.mic.available) return 'mic-silent'
     return 'none'
   }
 
-  /** How often the pad confirmed what the microphone heard — a room-noise hint. */
+  /** How often the two sensors agreed — a hint that one of them is struggling. */
   get corroborationRate () {
     const n = this.confirmed + this.unconfirmed
     return n ? this.confirmed / n : null

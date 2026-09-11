@@ -187,23 +187,6 @@ export const CALIBRATION = {
 }
 
 /**
- * The jug band. Members wake up as her streak grows, so the reward for playing
- * steadily is more music — which is the whole idea of a jug band.
- *
- * Emoji picked for a riverside-hollow jug band and checked against the Apple emoji
- * font so none render as an empty box. There is no capybara or porcupine in Unicode;
- * beaver and hedgehog are the nearest that actually draw. Rabbit and turtle are
- * reserved — they mean "quick" and "slow", and reusing them would muddle that.
- */
-export const BAND = [
-  { at: 0,  emoji: '🦦', name: 'Otter',    label: 'Otter on the washtub bass' },
-  { at: 4,  emoji: '🦫', name: 'Beaver',   label: 'Beaver picks up the guitar!' },
-  { at: 8,  emoji: '🦔', name: 'Hedgehog', label: 'Hedgehog starts on the jug!' },
-  { at: 12, emoji: '🐭', name: 'Mouse',    label: 'Mouse grabs the washboard!' },
-  { at: 16, emoji: '🐸', name: 'Frog',     label: 'Frog joins in on fiddle!' },
-]
-
-/**
  * Steadiness bands, in ms of spread. Names, never grades.
  *
  * Also rescaled: the old top band needed 25 ms of spread, which is trained-musician

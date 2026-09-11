@@ -138,22 +138,20 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
   background: var(--kraft); color: #33240f; border-color: var(--ink);
 }
 
-/* ------------------------------------------------------------- band */
+/* ------------------------------------------------------- mascot */
 
-.band-row { display: flex; gap: clamp(.4rem, 2vw, 1.2rem); align-items: flex-end; }
-.member {
-  font-size: clamp(2rem, 8vw, 3.4rem);
-  line-height: 1;
-  filter: grayscale(1); opacity: .35;
-  transition: filter .35s ease, opacity .35s ease, transform .2s ease;
+.mascot { font-size: clamp(3rem, 14vw, 5.5rem); line-height: 1; }
+
+/* Progress through the "listening to the room" phase, which used to be carried by
+   animals waking up one at a time. */
+.listening {
+  width: min(60vw, 18rem); height: 10px; border-radius: 5px;
+  background: #00000055; border: 1px solid var(--line); overflow: hidden;
 }
-.member.awake { filter: none; opacity: 1; }
-.member.lead { font-size: clamp(2.8rem, 12vw, 5rem); filter: none; opacity: 1; }
-.band-row.big .member { filter: none; opacity: 1; }
-/* Must out-specify .band-row.big .member above, or the warm-up can't look asleep. */
-.band-row .member.sleepy { filter: grayscale(1); opacity: .38; }
-.member.bounce { animation: bounce .18s ease; }
-@keyframes bounce { 50% { transform: translateY(-14%) scale(1.08); } }
+.listening i {
+  display: block; height: 100%; width: 0%;
+  background: var(--kraft); transition: width .25s linear;
+}
 
 /* ------------------------------------------------------------- warm-up */
 
@@ -311,8 +309,8 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 
 /* Where the stick meets the pad. */
 .lane .strike {
-  position: absolute; left: 4%; right: 4%; height: 5px; border-radius: 3px;
-  background: #ffffff33;
+  position: absolute; left: 4%; right: 4%; height: 6px; border-radius: 3px;
+  background: #ffffff4d;
   transition: background-color .08s ease, box-shadow .08s ease;
 }
 .lane .strike.hit { background: var(--hot); box-shadow: 0 0 20px #ffc857aa; }
@@ -321,46 +319,6 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
   position: absolute; left: 0; right: 0; bottom: .3rem;
   text-align: center; font-weight: 900; font-size: 1.1rem; color: var(--muted);
   letter-spacing: .08em;
-}
-
-/*
- * The stick.
- *
- * Held at the butt OUTSIDE its lane, angled in and down so the bead lands on the middle
- * of the pad — which is how a stick is actually held and where it actually strikes. The
- * pivot is the hand, so lifting swings the bead up and outward and the stroke brings it
- * back down onto the pad.
- */
-.stick {
-  position: absolute;
-  width: 16px;
-  transform-origin: 50% 0;
-  will-change: transform;
-  z-index: 3;
-  pointer-events: none;
-}
-/* Tapered shaft: thicker at the hand, thinner toward the bead, like a real stick. */
-.stick .shaft {
-  position: absolute; inset: 0;
-  clip-path: polygon(26% 0%, 74% 0%, 62% 100%, 38% 100%);
-  background: linear-gradient(180deg, #caa276 0%, #eed7b2 22%, #dcb489 62%, #c1945f 100%);
-  box-shadow: 0 3px 10px #00000066;
-}
-/* The bead — the bit that actually hits the pad. */
-.stick .bead {
-  position: absolute; left: 50%; bottom: -6px;
-  width: 14px; height: 15px; margin-left: -7px;
-  border-radius: 50% 50% 45% 45%;
-  background: radial-gradient(circle at 36% 30%, #f6e3c4, #d9ab74 60%, #ac7f4c);
-  box-shadow: 0 2px 6px #00000055;
-}
-/* The hand, at the butt, outside the lane. */
-.stick .grip {
-  position: absolute; left: 50%; top: -6px;
-  width: 26px; height: 22px; margin-left: -13px;
-  border-radius: 46% 46% 42% 42%;
-  background: linear-gradient(180deg, #8a6340, #5d4028);
-  box-shadow: 0 3px 8px #00000066;
 }
 
 /* verdict --------------------------------------------------------- */
@@ -498,8 +456,7 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
   .screen { gap: .35rem; }
   .ex-tip { font-size: .78rem; max-height: 2.4em; overflow: hidden; }
   .verdict-lane { height: 2.6rem; }
-  .band-row .member { font-size: clamp(1.4rem, 5vw, 2rem); }
-  .member.lead { font-size: clamp(1.9rem, 7vw, 2.6rem); }
+  .mascot { font-size: clamp(2rem, 8vw, 3rem); }
   .lane .handtag { font-size: .9rem; bottom: .1rem; }
   #screen-play .bar { font-size: .85rem; }
   .huge { font-size: clamp(1.1rem, 4vw, 1.5rem); padding: .55em 1.3em; }
@@ -510,7 +467,7 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 
 @media (max-height: 600px) {
   .ex-tip { display: none; }              /* the exercise name still says what to do */
-  .band-row { display: none; }            /* the streak counter still shows progress */
+  .mascot { display: none; }
   .verdict-lane { height: 2.2rem; }
   .logo { font-size: clamp(2rem, 9vw, 3.2rem); }
   .fineprint { display: none; }
@@ -524,7 +481,6 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
   /* The ball stops arcing and simply steps from pad to pad — the beat cue stays,
      it just no longer moves continuously. */
   .ball { transition: none; }
-  .member.bounce { animation: none; }
   .pads .p.hit { transform: none; outline: 3px solid var(--hot); }
 }
 

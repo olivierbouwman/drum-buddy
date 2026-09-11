@@ -9,7 +9,7 @@
  * interface without touching anything in here.
  */
 
-import { TEMPO, BAND, DRUM_NAV, SCHEDULER, FUSION, CALIBRATION, DETECTOR,
+import { TEMPO, DRUM_NAV, SCHEDULER, FUSION, CALIBRATION, DETECTOR,
   LEVELS, LEVEL_STORAGE_KEY, applyLevel } from './config.js'
 import { EXERCISES } from './exercises.js'
 import { AudioEngine } from './audio-engine.js'
@@ -207,10 +207,10 @@ async function setUpSensors () {
 
 function reportSensors (micOk, motionOk) {
   const bits = []
-  if (micOk) bits.push('microphone')
   if (motionOk) bits.push('pad wobble')
+  if (micOk) bits.push('microphone')
   if (!bits.length) {
-    toast('No microphone — tap the screen to play along', 5000)
+    toast('No microphone or pad sensor — tap the screen to play along', 5000)
   } else if (mic && mic.processing.length) {
     // Android and Safari sometimes ignore the constraints; worth knowing in debug.
     if (debug) toast('Mic processing still on: ' + mic.processing.join(', '), 6000)
@@ -280,11 +280,12 @@ function storeLatency () {
  */
 async function runWarmup () {
   const dots = $('warmup-dots')
-  const members = [...$('warmup-band').children]
+  const progress = $('warmup-progress')
   dots.innerHTML = ''
 
   // --- listening phase: metronome only, nobody playing ---
   $('warmup-msg').textContent = 'Shhh… listening to your room 🤫'
+  if (progress) progress.firstElementChild.style.width = '0%'
   inSilentWindow = true
   // Wider than any plausible round trip, so each click heard can only be the one just
   // played. Tighter spacing made the measurement ambiguous on a slow audio stack.
@@ -294,11 +295,9 @@ async function runWarmup () {
     clicks.playAt(i === 0 ? 'accent' : 'beat', t)
     timing.expectClick(t)
     const when = Math.max(0, engine.audibleAt(t) - performance.now())
+    const done = (i + 1) / 5
     setTimeout(() => {
-      const m = members[i % members.length]
-      m.classList.remove('sleepy')
-      m.classList.add('bounce')
-      setTimeout(() => m.classList.remove('bounce'), 200)
+      if (progress) progress.firstElementChild.style.width = Math.round(done * 100) + '%'
     }, when)
     t += gap
   }
@@ -314,13 +313,10 @@ async function runWarmup () {
     lastHitAt = hit.time
     if (got >= 4) return
     dots.children[got].classList.add('got')
-    const m = members[got % members.length]
-    m.classList.add('bounce')
-    setTimeout(() => m.classList.remove('bounce'), 200)
     got++
     if (got === 4) {
       off()
-      $('warmup-msg').textContent = 'The whole band is up! 🎉'
+      $('warmup-msg').textContent = 'Got it! 🎉'
       applyAutoTune()
       setTimeout(() => startExercise(state.exerciseIndex), 700)
     }
@@ -439,7 +435,6 @@ function startExercise (index) {
 
   deafnessHandled = false
   loudSince = 0
-  renderBand(0)
   $('streak').innerHTML = '<b>0</b> in a row'
 
   const beatS = 60 / state.bpm
@@ -546,37 +541,7 @@ function startExercise (index) {
 }
 
 function updateStreak () {
-  const s = state.scorer
-  $('streak').innerHTML = `<b>${s.streak}</b> in a row`
-  renderBand(s.streak)
-}
-
-/** Band members wake up as the streak grows. Nobody ever leaves. */
-let bandShown = -1
-function renderBand (streak) {
-  const host = $('play-band')
-  if (bandShown < 0) {
-    host.innerHTML = ''
-    for (const m of BAND) {
-      const el = document.createElement('span')
-      el.className = 'member' + (m.at === 0 ? ' lead awake' : '')
-      el.textContent = m.emoji
-      el.dataset.at = m.at
-      host.append(el)
-    }
-    bandShown = 0
-  }
-  for (const el of host.children) {
-    const at = +el.dataset.at
-    const awake = streak >= at
-    if (awake && !el.classList.contains('awake')) {
-      el.classList.add('awake', 'bounce')
-      setTimeout(() => el.classList.remove('bounce'), 220)
-      const m = BAND.find((b) => b.at === at)
-      if (m && at > 0) toast(m.label + '! 🎵', 1800)
-    }
-    if (!awake) el.classList.remove('awake')
-  }
+  $('streak').innerHTML = `<b>${state.scorer.streak}</b> in a row`
 }
 
 $('btn-quit').addEventListener('click', () => abortToStart())
@@ -602,7 +567,6 @@ function stopPlay () {
 function abortToStart () {
   stopPlay()
   letSleep()
-  bandShown = -1
   show('start')
   $('btn-play').disabled = false
 }
