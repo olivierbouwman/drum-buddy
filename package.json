@@ -4,12 +4,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:lan": "HTTPS=1 vite --host",
-    "build": "vite build",
+    "dev": "npm run worklet && vite",
+    "dev:lan": "npm run worklet && HTTPS=1 vite --host",
+    "build": "npm run worklet && vite build",
     "preview": "vite preview",
     "analyse": "node tools/analyse.mjs",
-    "test": "node test/scoring.test.mjs"
+    "test": "node test/scoring.test.mjs && node test/timing.test.mjs",
+    "worklet": "node tools/build-worklet.mjs"
   },
   "devDependencies": {
     "@vitejs/plugin-basic-ssl": "^2.1.0",

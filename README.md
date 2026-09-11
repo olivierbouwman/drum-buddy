@@ -28,6 +28,38 @@ allowed to be more complicated than it needs to be:
 
 `npm test` covers all of this, including the sign convention, and gates deployment.
 
+## Continuous calibration
+
+The latency constant is re-measured **every beat**, for the whole session.
+
+This is not a refinement. Measured on the real device, the round trip was 353 ms during
+one take and 394 ms ninety seconds later in the same session, each rock-steady within
+itself. A single calibration at start-up would have been 41 ms wrong by the end of a
+short practice — the entire width of the "perfect" window. She would be told she was on
+time at the start of an exercise and late at the end of it, purely from drift.
+
+**What adapts continuously, and what must never:**
+
+| Adapts | From what | Why it's safe |
+| --- | --- | --- |
+| Detection threshold | Per-band noise floor | Only affects *whether* a hit is seen, not *when* |
+| Latency constant K | The metronome click heard back through the mic | The app generated the click; it knows nothing about her playing |
+| Double-hit rejection | The note spacing the exercise asks for | Fixed by the music, not by her |
+
+The one thing that must **never** feed back is her own playing. Adapting K from her hits
+would centre her errors on zero by construction: a child who consistently rushes would
+be told she is perfect, and the app would have erased the very thing it exists to show
+her. There is deliberately no API for a hit to reach `TimingModel`, and a test asserts
+it stays that way.
+
+Discriminating the click from a drum hit is easy because they are opposites — the click
+is sustained narrowband energy with nothing up high, a stick is a broadband impulse.
+Against the real recordings this gives sub-millisecond agreement with an independent
+matched-filter analysis, and **zero** phantom clicks from fifteen seconds of drumming.
+
+If the number stops holding still, the app stops scoring and says so, rather than
+reporting timing it cannot stand behind. Refusal keys on instability, not size.
+
 ## Running it
 
 ```sh

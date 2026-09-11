@@ -72,46 +72,80 @@ export class TapInput extends InputSource {
 }
 
 /**
- * Merges several sources into one stream, collapsing hits that are obviously the same
- * physical strike seen twice. When the mic and the accelerometer both fire, the mic's
- * timestamp wins (finer resolution) but confidence goes up, and a mic hit the
- * accelerometer did NOT see is more likely to be metronome bleed than a real strike.
+ * Combines the microphone and the accelerometer.
+ *
+ * The roles are set by what the Phase 0 recordings actually showed, not by what the two
+ * sensors could do in principle:
+ *
+ *   - The MICROPHONE is the timing source. Its onsets are stamped on the audio render
+ *     thread and are sample-accurate.
+ *   - The ACCELEROMETER is a fallback and a corroboration signal. On the real pad the
+ *     two sensors agreed on only 15 of 37 events, and where they did agree the offset
+ *     between them scattered by 38 ms.
+ *
+ * That measured disagreement rules out two things I had planned. It is not reliable
+ * enough to TIME a hit the microphone missed, and — more tempting, and more dangerous —
+ * it is not reliable enough to VETO a microphone hit it failed to feel. Vetoing would
+ * have thrown away real hits every time the pad damped a strike, and it would have
+ * looked like the child missing notes rather than like a bug.
+ *
+ * So while the microphone works, the accelerometer only corroborates. It takes over
+ * completely when there is no microphone, and then the app says timing is approximate.
  */
 export class FusedInput extends InputSource {
-  constructor (sources, agreeMs) {
+  constructor ({ mic, motion, agreeMs }) {
     super('fused')
-    this.sources = sources
+    this.mic = mic
+    this.motion = motion
     this.agreeMs = agreeMs
-    this.pending = []
-    for (const s of sources) {
-      s.onHit((hit) => this._take(hit))
-      if (s.available) this.available = true
-    }
-  }
+    this.recentMotion = []
+    this.confirmed = 0
+    this.unconfirmed = 0
 
-  _take (hit) {
-    const near = this.pending.find((p) => Math.abs(p.time - hit.time) * 1000 < this.agreeMs)
-    if (near) {
-      near.sources.add(hit.source)
-      // Prefer the mic's timestamp: the accelerometer is quantised to ~60 Hz.
-      if (hit.source === 'mic') near.time = hit.time
-      near.strength = Math.max(near.strength, hit.strength)
-      return
-    }
-    const rec = { time: hit.time, strength: hit.strength, sources: new Set([hit.source]) }
-    this.pending.push(rec)
-    // Wait briefly for a corroborating source before releasing the hit.
-    setTimeout(() => {
-      this.pending = this.pending.filter((p) => p !== rec)
-      this.emit({
-        time: rec.time,
-        strength: rec.strength,
-        source: [...rec.sources].join('+'),
-        confidence: rec.sources.size > 1 ? 1 : 0.6,
+    if (mic) {
+      mic.onHit((hit) => {
+        const t = hit.time
+        this.recentMotion = this.recentMotion.filter((m) => (t - m) * 1000 < this.agreeMs * 3)
+        const seen = this.recentMotion.some((m) => Math.abs(t - m) * 1000 <= this.agreeMs)
+        if (seen) this.confirmed++
+        else this.unconfirmed++
+        this.emit({ ...hit, corroborated: seen, timingTrusted: true })
       })
-    }, this.agreeMs)
+    }
+
+    if (motion) {
+      motion.onHit((hit) => {
+        this.recentMotion.push(hit.time)
+        // Only a timing source when there is nothing better.
+        if (!mic || !mic.available) {
+          this.emit({ ...hit, corroborated: false, timingTrusted: false })
+        }
+      })
+    }
+
+    this.available = !!((mic && mic.available) || (motion && motion.available))
   }
 
-  start () { this.sources.forEach((s) => s.available && s.start()) }
-  stop () { this.sources.forEach((s) => s.stop()) }
+  /** Which sensor is actually deciding when a hit happened. */
+  get timingSource () {
+    if (this.mic && this.mic.available) return 'mic'
+    if (this.motion && this.motion.available) return 'motion'
+    return 'none'
+  }
+
+  /** How often the pad confirmed what the microphone heard — a room-noise hint. */
+  get corroborationRate () {
+    const n = this.confirmed + this.unconfirmed
+    return n ? this.confirmed / n : null
+  }
+
+  start () {
+    if (this.mic && this.mic.available) this.mic.start()
+    if (this.motion && this.motion.available) this.motion.start()
+  }
+
+  stop () {
+    if (this.mic) this.mic.stop()
+    if (this.motion) this.motion.stop()
+  }
 }

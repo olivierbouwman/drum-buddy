@@ -9,13 +9,17 @@
  * interface without touching anything in here.
  */
 
-import { TEMPO, BAND, DRUM_NAV, SCHEDULER } from './config.js'
+import { TEMPO, BAND, DRUM_NAV, SCHEDULER, FUSION, CALIBRATION } from './config.js'
 import { EXERCISES } from './exercises.js'
 import { AudioEngine } from './audio-engine.js'
 import { ClickSource } from './click-source.js'
 import { Scheduler } from './scheduler.js'
 import { Visuals, confetti } from './visuals.js'
-import { TapInput } from './input-sources.js'
+import { TapInput, FusedInput } from './input-sources.js'
+import { MicInput } from './onset-detector.js'
+import { MotionInput } from './motion-detector.js'
+import { TimingModel } from './timing-model.js'
+import { probeOffsetSeconds, refractoryForSpacing } from './dsp-core.js'
 import { LiveScorer, summarise } from './scoring.js'
 
 const $ = (id) => document.getElementById(id)
@@ -26,6 +30,9 @@ let clicks = null
 let scheduler = null
 let visuals = null
 let input = null
+let mic = null
+let motion = null
+let timing = null
 
 const state = {
   bpm: TEMPO.default,
@@ -65,21 +72,123 @@ $('btn-play').addEventListener('click', async () => {
     await clicks.prepare()
     scheduler = new Scheduler(engine, clicks)
     visuals = new Visuals(SCHEDULER.countInBeats)
-    input = new TapInput(engine)
-    input.start()
 
-    engine.onStateChange((s) => {
-      if (s !== 'running') toast('Tap anywhere to keep going')
+    // The probe reports the peak of a smoothed envelope, which sits partway into the
+    // burst rather than at its start. Measure that offset from the click itself rather
+    // than guessing — a guess of "half the burst" was 8 ms out.
+    const clickPcm = clicks.buffers.beat.getChannelData(0)
+    timing = new TimingModel(probeOffsetSeconds(clickPcm, engine.sampleRate, {}))
+    seedStoredLatency()
+
+    engine.onStateChange((st) => {
+      if (st !== 'running') toast('Tap anywhere to keep going')
     })
 
     keepAwake()
-
+    show('warmup')
+    await setUpSensors()
     runWarmup()
   } catch (err) {
-    toast('Could not start audio: ' + err.message)
+    toast('Could not start: ' + err.message)
     $('btn-play').disabled = false
   }
 })
+
+/**
+ * Both sensors need the same user gesture that started audio, so they are set up here
+ * rather than lazily. Neither is required: if both fail she still gets the metronome
+ * and can tap along, which is a real practice tool.
+ */
+async function setUpSensors () {
+  $('warmup-msg').textContent = 'Listening for your drum…'
+
+  mic = new MicInput(engine)
+  motion = new MotionInput(engine)
+
+  const [micOk, motionOk] = await Promise.all([
+    mic.init().catch(() => false),
+    motion.init().catch(() => false),
+  ])
+
+  if (micOk) {
+    mic.onLevel((peak) => {
+      const el = $('warmup-level') || $('play-level')
+      if (el) el.style.width = Math.min(100, peak * 160) + '%'
+      const p = $('play-level')
+      if (p) p.style.width = Math.min(100, peak * 160) + '%'
+    })
+    // Every click the app plays is a fresh, free latency measurement.
+    mic.onClick((t) => timing.observeClick(t))
+  }
+
+  if (micOk || motionOk) {
+    input = new FusedInput({
+      mic: micOk ? mic : null,
+      motion: motionOk ? motion : null,
+      agreeMs: FUSION.agreeMs,
+    })
+  } else {
+    input = new TapInput(engine)
+  }
+  input.start()
+
+  if (!micOk) {
+    // Nothing can hear the click come back, so K can only be estimated: a tap is
+    // stamped from the event itself, and the delay that matters is how late she HEARS
+    // the beat. Approximate, and flagged as such, but far better than refusing to score.
+    timing.setEstimated(engine.outputLatency || 0.02)
+  }
+
+  // In debug, taps stay live alongside the real sensors for testing on a desktop.
+  if (debug && (micOk || motionOk)) {
+    const tap = new TapInput(engine)
+    tap.onHit((h) => input.emit({ ...h, timingTrusted: true }))
+    tap.start()
+  }
+
+  reportSensors(micOk, motionOk)
+}
+
+function reportSensors (micOk, motionOk) {
+  const bits = []
+  if (micOk) bits.push('microphone')
+  if (motionOk) bits.push('pad wobble')
+  if (!bits.length) {
+    toast('No microphone — tap the screen to play along', 5000)
+  } else if (mic && mic.processing.length) {
+    // Android and Safari sometimes ignore the constraints; worth knowing in debug.
+    if (debug) toast('Mic processing still on: ' + mic.processing.join(', '), 6000)
+  }
+  if (debug) console.log('[drum-buddy] sensors:', { micOk, motionOk, micError: mic && mic.error, motionError: motion && motion.error })
+}
+
+/**
+ * Reuse the last measured latency as a starting point so the first few beats are not
+ * wildly wrong. It is only a seed: live measurements replace it within a few clicks,
+ * and the number drifts enough between sessions that trusting a stored one would be
+ * exactly the "lying to a child" failure this app exists to avoid.
+ */
+function seedStoredLatency () {
+  try {
+    const raw = localStorage.getItem(CALIBRATION.storageKey)
+    if (!raw) return
+    const v = JSON.parse(raw)
+    if (v && v.sampleRate === engine.sampleRate && typeof v.latencyMs === 'number') {
+      timing.latencyS = v.latencyMs / 1000
+    }
+  } catch { /* storage unavailable or corrupt; a seed is optional */ }
+}
+
+function storeLatency () {
+  try {
+    if (timing && timing.usable) {
+      localStorage.setItem(CALIBRATION.storageKey, JSON.stringify({
+        latencyMs: Math.round(timing.latencyMs),
+        sampleRate: engine.sampleRate,
+      }))
+    }
+  } catch { /* not important enough to bother her about */ }
+}
 
 // ------------------------------------------------------------------ warm-up
 
@@ -89,7 +198,6 @@ $('btn-play').addEventListener('click', async () => {
  * sensor. Either way she just sees the band waking up.
  */
 function runWarmup () {
-  show('warmup')
   const dots = $('warmup-dots')
   dots.innerHTML = ''
   for (let i = 0; i < 4; i++) dots.append(document.createElement('span'))
@@ -158,6 +266,10 @@ function startExercise (index) {
   state.scorer = new LiveScorer(beatS)
 
   scheduler.onClick((beat) => {
+    // Tell the timing model when we asked for this click; the microphone will report
+    // when it actually came back, and the gap keeps K current.
+    timing.expectClick(beat.time)
+
     if (!beat.countIn) return
     // Show the count-in digit when the click is actually audible, not when it was
     // scheduled — those are up to 150 ms apart.
@@ -178,15 +290,44 @@ function startExercise (index) {
   scheduler.onEnd(() => finishExercise())
 
   offHits = onHits((hit) => {
-    state.hits.push(hit)
-    const res = state.scorer.feed(hit)
+    // Everything measured stays in AudioContext time; K is subtracted here and nowhere
+    // else. See the invariant at the top of timing-model.js.
+    const corrected = { ...hit, time: timing.correct(hit.time) }
+    state.hits.push(corrected)
+
+    if (!timing.usable) {
+      // Refuse to grade until the latency is known. Reporting timing against an
+      // unmeasured 350 ms delay would mark a perfectly good hit as hopelessly late.
+      visuals.missed()
+      return
+    }
+    const res = state.scorer.feed(corrected)
     if (!res) return
     visuals.showVerdict(res.errorMs)
     updateStreak()
   })
 
+  // Shortest gap this exercise actually asks for, so double-hit rejection is generous
+  // on slow exercises and tight on fast ones.
+  const offsets = ex.notes.map((n) => n.at).sort((a, b) => a - b)
+  let minGap = ex.beatsPerBar
+  for (let i = 1; i < offsets.length; i++) minGap = Math.min(minGap, offsets[i] - offsets[i - 1])
+  if (mic && mic.available) mic.setRefractoryMs(refractoryForSpacing(minGap * beatS))
+
   scheduler.start(ex, state.bpm)
   visuals.start((ts) => scheduler.beatPhase(ts), makeHandReader(beatS))
+
+  // By the end of the count-in the microphone should have heard several clicks. If it
+  // hasn't, the volume is down or the speaker is muted — say so, because otherwise she
+  // just plays into a screen that never responds.
+  clearTimeout(calibWatch)
+  calibWatch = setTimeout(() => {
+    if (scheduler.running && !timing.usable) {
+      toast(timing.status === 'unstable'
+        ? 'The beat keeps shifting — let’s try again in a moment'
+        : 'I can’t hear the beep — is the volume up?', 6000)
+    }
+  }, (SCHEDULER.countInBeats + 1) * beatS * 1000)
 }
 
 /**
@@ -257,7 +398,10 @@ function nudgeTempo (d) {
   if (scheduler.running) { stopPlay(); startExercise(state.exerciseIndex) }
 }
 
+let calibWatch = null
+
 function stopPlay () {
+  clearTimeout(calibWatch)
   scheduler.stop()
   visuals.stop()
   if (offHits) { offHits(); offHits = null }
@@ -275,6 +419,7 @@ function abortToStart () {
 
 function finishExercise () {
   stopPlay()
+  storeLatency()
   state.scorer.finish()
   const beatS = 60 / state.bpm
   const stats = summarise(state.notes, state.hits, beatS)
@@ -312,6 +457,12 @@ function finishExercise () {
     add('Today you were', stats.lean === 'quick' ? 'a bit of a 🐰 hare' : 'a bit of a 🐢 tortoise')
   }
   if (debug) {
+    add('latency (ms)', timing.latencyMs === null ? 'unmeasured' : Math.round(timing.latencyMs))
+    add('latency drift', Math.round(timing.spreadMs * 10) / 10 + ' ms')
+    add('timing from', input.timingSource || 'tap')
+    if (input.corroborationRate !== null && input.corroborationRate !== undefined) {
+      add('pad confirmed', Math.round(input.corroborationRate * 100) + '%')
+    }
     add('offset (ms)', Math.round(stats.offsetMs / 5) * 5)
     add('spread (ms)', Math.round(stats.spreadMs / 5) * 5)
     add('drift (bpm)', stats.driftBpm.toFixed(1))
