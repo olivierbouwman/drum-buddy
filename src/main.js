@@ -251,6 +251,9 @@ async function setUpSensors () {
     input = new TapInput(engine)
   }
   input.start()
+  // One subscription for the whole session: the background answers every hit, on any
+  // screen, without each screen having to remember to tell it.
+  input.onHit(popDancers)
 
   if (!micOk) {
     // Nothing can hear the click come back, so K can only be estimated: a tap is
@@ -1939,26 +1942,70 @@ function snapshot () {
       }
 }
 
-// ------------------------------------------------------------------ snow
+// --------------------------------------------------------------- dancers
 
-/** Frogtown Hollow is always snowing. Decorative; skipped entirely if she'd rather
- *  things held still. */
-function makeSnow (count = 26) {
+/*
+ * Music emoji drifting up the background that bounce when she hits the pad.
+ *
+ * Decorative, and deliberately kept that way. It is aria-hidden, it sits behind every
+ * screen, and it never carries anything she needs to know — if it vanished entirely the
+ * app would work identically. That is the bar a background effect has to clear.
+ *
+ * The bounce comes from real hits rather than from the beat, so it answers HER playing:
+ * drum and the room moves, stop and it settles. Reacting to the metronome instead would
+ * look the same when she is playing perfectly and lie the rest of the time.
+ */
+const DANCERS = ['🎵', '🎶', '🥁', '🪕', '🎺', '🎻', '🪗', '🎷']
+let dancers = []
+
+function makeDancers (count = 18) {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-  const host = $('snow')
+  const host = $('dancers')
+  if (!host) return
   for (let i = 0; i < count; i++) {
-    const f = document.createElement('i')
-    const size = 3 + Math.random() * 5
-    f.style.left = Math.random() * 100 + '%'
-    f.style.width = f.style.height = size.toFixed(1) + 'px'
-    f.style.opacity = (0.25 + Math.random() * 0.4).toFixed(2)
-    f.style.setProperty('--sway', (Math.random() * 80 - 40).toFixed(0) + 'px')
-    f.style.animationDuration = (9 + Math.random() * 12).toFixed(1) + 's'
-    f.style.animationDelay = (-Math.random() * 20).toFixed(1) + 's'
-    host.append(f)
+    const el = document.createElement('i')
+    // The glyph lives in a child so its bounce composes with the drift on the parent
+    // instead of overwriting it.
+    const glyph = document.createElement('span')
+    glyph.textContent = DANCERS[i % DANCERS.length]
+    el.append(glyph)
+    el.style.left = (Math.random() * 96).toFixed(1) + '%'
+    el.style.setProperty('--size', (16 + Math.random() * 20).toFixed(0) + 'px')
+    el.style.setProperty('--dim', (0.18 + Math.random() * 0.22).toFixed(2))
+    el.style.setProperty('--sway', (Math.random() * 90 - 45).toFixed(0) + 'px')
+    el.style.setProperty('--spin', (Math.random() * 60 - 30).toFixed(0) + 'deg')
+    el.style.animationDuration = (16 + Math.random() * 16).toFixed(1) + 's'
+    el.style.animationDelay = (-Math.random() * 30).toFixed(1) + 's'
+    host.append(el)
+    dancers.push(el)
   }
 }
-makeSnow()
+
+/*
+ * Bounce a few of them.
+ *
+ * Rate-limited to five a second no matter how fast she drums. Partly so a drum roll
+ * cannot turn the background into a strobe — nothing here may flash above 3 Hz — and
+ * partly because restarting eighteen animations per hit is real work on a tablet that
+ * is also running a metronome and a filterbank.
+ */
+let lastPop = 0
+function popDancers () {
+  if (!dancers.length) return
+  const now = performance.now()
+  if (now - lastPop < 200) return
+  lastPop = now
+  for (let n = 0; n < 3; n++) {
+    const el = dancers[(Math.random() * dancers.length) | 0]
+    if (el.classList.contains('hit')) continue
+    el.classList.add('hit')
+    // Cleared on the animation's own event rather than a matching timeout, so the two
+    // can never drift apart and leave a dancer permanently mid-bounce.
+    el.addEventListener('animationend', () => el.classList.remove('hit'), { once: true })
+  }
+}
+
+makeDancers()
 
 // ------------------------------------------------------------------ misc
 
@@ -2017,7 +2064,42 @@ window.addEventListener('appinstalled', () => { $('btn-install').hidden = true }
 // needless source of confusion.
 if ('serviceWorker' in navigator && !diagnosticsActive) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register(import.meta.env.BASE_URL + 'sw.js').catch(() => {})
+    navigator.serviceWorker.register(import.meta.env.BASE_URL + 'sw.js').then((reg) => {
+      /*
+       * Update itself, because an installed app has no address bar to reload from.
+       *
+       * In fullscreen display mode there is no menu, no refresh, no URL — the only way
+       * to pick up a new build by hand is to swipe the app out of recents and reopen it,
+       * which is not something to expect of an eight-year-old or of anyone who just
+       * wants to practise.
+       *
+       * Checked on launch and again whenever the app comes back to the foreground, which
+       * is when a phone or tablet actually resumes rather than reloads.
+       */
+      const check = () => { if (!document.hidden) reg.update().catch(() => {}) }
+      check()
+      document.addEventListener('visibilitychange', check)
+
+      /*
+       * A waiting worker means a newer build is already downloaded. Take it, but never
+       * mid-exercise: reloading out from under her would drop the take she is playing.
+       * It waits for the next quiet moment instead, and there is always one.
+       */
+      let reloading = false
+      const applyWhenIdle = () => {
+        if (reloading || !reg.waiting) return
+        if (scheduler && scheduler.running) return
+        reloading = true
+        // The new worker calls skipWaiting on install, so it is already active by the
+        // time this runs; the reload is what swaps the page over to it.
+        location.reload()
+      }
+      reg.addEventListener('updatefound', () => {
+        const fresh = reg.installing
+        if (fresh) fresh.addEventListener('statechange', applyWhenIdle)
+      })
+      document.addEventListener('visibilitychange', applyWhenIdle)
+    }).catch(() => {})
   })
 }
 

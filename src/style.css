@@ -63,7 +63,7 @@ body {
 
 .screen {
   position: absolute; inset: 0;
-  z-index: 2;                 /* above the snow layer, which is z-index 1 */
+  z-index: 2;                 /* above the dancers layer, which is z-index 1 */
   /* Nothing may ever be unreachable. Her tablet is 433 CSS pixels tall in landscape,
      less than half what the layout was first built for, so a safety net matters more
      than tidiness here. */
@@ -517,20 +517,58 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 }
 #toast.on { transform: translateX(-50%) translateY(0); opacity: 1; }
 
-/* ------------------------------------------------------------- snow */
-
-/* Frogtown Hollow is always snowing. Decorative only, and switched off entirely
-   under prefers-reduced-motion. */
-#snow { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 1; }
-#snow i {
-  position: absolute; top: -6vh;
-  width: 6px; height: 6px; border-radius: 50%;
-  background: #eaf4f8; opacity: .5;
-  animation: drift linear infinite;
+/* The one thing that has to be right before she starts: where the tablet goes. */
+.setup-note {
+  margin: 0 auto var(--pad);
+  max-width: 34ch;
+  font-size: .95rem;
+  line-height: 1.4;
+  color: var(--ink);
+  opacity: .85;
+  text-align: center;
 }
-@keyframes drift {
-  0%   { transform: translate(0, -6vh); }
-  100% { transform: translate(var(--sway, 20px), 108vh); }
+.setup-note span { font-size: 1.1em; margin-right: .3em; }
+@media (max-height: 560px) { .setup-note { font-size: .85rem; } }
+
+/* ---------------------------------------------------------- dancers */
+
+/*
+ * Music emoji drifting up the background, which bounce when she hits the pad.
+ *
+ * Purely decorative, and it has to stay that way: it is aria-hidden, it never carries
+ * information she needs, and it is switched off entirely under prefers-reduced-motion.
+ * The bounce is driven by real hits rather than a timer, so it reads as the room
+ * responding to her playing.
+ *
+ * Two rules kept deliberately: nothing changes faster than a few times a second even at
+ * the fastest tempo she can drum, and the layer never sits above anything she has to
+ * read — it is behind every screen at z-index 1.
+ */
+#dancers { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 1; }
+#dancers i {
+  position: absolute; bottom: -12vh;
+  font-size: var(--size, 22px);
+  line-height: 1;
+  opacity: var(--dim, .3);
+  font-style: normal;
+  will-change: transform;
+  animation: float-up linear infinite;
+}
+@keyframes float-up {
+  0%   { transform: translate(0, 0) rotate(0deg); }
+  100% { transform: translate(var(--sway, 30px), -122vh) rotate(var(--spin, 20deg)); }
+}
+
+/*
+ * The bounce. A short scale-and-lift on the emoji's inner span, so it composes with the
+ * drifting transform on the parent instead of fighting it.
+ */
+#dancers i > span { display: inline-block; will-change: transform; }
+#dancers i.hit > span { animation: dancer-pop var(--pop, 320ms) cubic-bezier(.2, 1.4, .4, 1); }
+@keyframes dancer-pop {
+  0%   { transform: scale(1) translateY(0); }
+  35%  { transform: scale(1.6) translateY(-14px); }
+  100% { transform: scale(1) translateY(0); }
 }
 
 /* ------------------------------------------ short landscape screens */
@@ -567,7 +605,7 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
-  #snow { display: none; }
+  #dancers { display: none; }
   /* The ball stops arcing and simply steps from pad to pad — the beat cue stays,
      it just no longer moves continuously. */
   .ball { transition: none; }
@@ -576,7 +614,7 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 
 @media (prefers-contrast: more) {
   :root { --muted: #e4f1f6; --line: #6ba6bf; }
-  #snow { display: none; }
+  #dancers { display: none; }
   .meter i { background: #fff; }
 }
 

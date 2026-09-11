@@ -18,13 +18,12 @@
 </head>
 <body>
 
-<div id="snow" aria-hidden="true"></div>
+<div id="dancers" aria-hidden="true"></div>
 
 <!-- ---------------------------------------------------------------- start -->
 <section id="screen-start" class="screen on">
   <div class="stage-lights" aria-hidden="true"></div>
   <h1 class="logo">Drum&nbsp;Buddy</h1>
-  <p class="tagline">Play along with the beat</p>
 
   <button id="player-chip" class="player-chip">
     <span id="player-emoji" aria-hidden="true">🦦</span>
@@ -42,7 +41,7 @@
   <button id="btn-fullscreen" class="ghost" hidden>⛶ Full screen</button>
 
   <p class="fineprint" id="start-note">
-    Uses the microphone to hear your drum. Nothing is recorded or sent anywhere.
+    Nothing is recorded or sent anywhere.
   </p>
 </section>
 
@@ -72,6 +71,10 @@
 <!-- -------------------------------------------------------------- warm-up -->
 <section id="screen-warmup" class="screen" aria-labelledby="warmup-title">
   <h2 id="warmup-title" class="big-title">Getting ready…</h2>
+  <p class="setup-note">
+    <span aria-hidden="true">🥁</span>
+    Rest the tablet on your practice pad — it feels the drum through the wobble.
+  </p>
   <div class="listening" id="warmup-progress" aria-hidden="true"><i></i></div>
   <p class="instruction" id="warmup-msg" role="status" aria-live="polite">Listening…</p>
   <button id="tap-target" class="tap-target" hidden>
