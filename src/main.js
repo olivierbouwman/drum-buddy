@@ -225,7 +225,13 @@ async function setUpSensors () {
       if ((diagnosticsActive || speakerTest) && scheduler && scheduler.running && state.motionTrace.length < 20000) {
         // nowFine: the raw clock steps 85 ms at a time, which would smear the trace
         // across the very interval any speaker-borne signal has to be found in.
-        state.motionTrace.push([+engine.nowFine.toFixed(4), +(mag || 0).toFixed(4)])
+        // Third column is the gravity-inclusive magnitude: the only one of the two that
+        // still has dither in it when the tablet is completely still.
+        state.motionTrace.push([
+          +engine.nowFine.toFixed(4),
+          +(mag || 0).toFixed(4),
+          motion.rawG === null || motion.rawG === undefined ? null : +motion.rawG.toFixed(5),
+        ])
       }
     })
   } else {

@@ -32,11 +32,46 @@ if (notes.length < 8 || motion.length < 200) {
   process.exit(1)
 }
 
+/*
+ * Prefer the gravity-inclusive channel when the run carries one.
+ *
+ * The gravity-free channel is deadbanded on this hardware: a whole 55-second run came
+ * back as 3020 samples of exactly 0.0000, which is not a weak signal, it is no signal.
+ * Gravity keeps the other channel's least significant bit dithering, and a signal below
+ * one bit is still recoverable by averaging — but only if the constant ~9.8 is taken out
+ * first, and only if any slow drift from the tablet settling goes with it.
+ */
+const hasG = motion.length > 0 && motion[0].length > 2 && motion.some((m) => m[2] !== null)
+if (hasG) {
+  const WIN = 25                                    // ~0.5 s at 50 Hz
+  const g = motion.map((m) => m[2])
+  for (let i = 0; i < motion.length; i++) {
+    const lo = Math.max(0, i - WIN)
+    const hi = Math.min(g.length, i + WIN + 1)
+    const local = []
+    for (let k = lo; k < hi; k++) if (g[k] !== null) local.push(g[k])
+    motion[i] = [motion[i][0], local.length ? Math.abs(g[i] - median(local)) : 0]
+  }
+}
+console.log(hasG
+  ? '  using the gravity-inclusive channel, high-passed'
+  : '  using the gravity-free channel (no gravity channel in this run)')
+
 const beat = median(notes.slice(1).map((t, i) => t - notes[i]))
 console.log(`${file}\n  ${notes.length} beats of ${(beat * 1000).toFixed(0)} ms, ${motion.length} motion samples`)
 
 // Anything that looks like a real strike disqualifies the whole run: this only means
 // something if nobody touched the pad.
+// A channel that is identically zero is not a quiet channel; it is a channel that was
+// never populated. Worth naming, because it looks exactly like "no signal found".
+if (motion.every((m) => m[1] === 0)) {
+  console.log('\n  Every sample is exactly 0.0000 over the whole run.')
+  console.log('  This device deadbands its gravity-free accelerometer at rest, so there')
+  console.log('  is nothing to analyse — not a weak signal, no signal. Re-run with a')
+  console.log('  build that records the gravity-inclusive channel.')
+  process.exit(0)
+}
+
 const mags = motion.map((m) => m[1])
 const rest = median(mags)
 const loud = mags.filter((v) => v > rest + 1.0).length

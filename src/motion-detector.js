@@ -76,6 +76,22 @@ export class MotionInput extends InputSource {
       : e.accelerationIncludingGravity
     if (!a) return
     const mag = Math.sqrt((a.x || 0) ** 2 + (a.y || 0) ** 2 + (a.z || 0) ** 2)
+
+    /*
+     * The gravity-inclusive magnitude, kept for diagnostics only.
+     *
+     * `acceleration` is a fused, deadbanded signal on this tablet: at rest it reports
+     * not "small" but exactly 0.0000, for thousands of consecutive samples. Anything
+     * quieter than its deadband — the case being moved by its own speaker, say — is
+     * gone before the app ever sees it. accelerationIncludingGravity sits at about 9.8
+     * instead, so its least significant bit is always dithering, and a signal far below
+     * one bit can still be recovered by averaging. Never used for hit detection: it
+     * carries the orientation of the tablet, which is not what a strike is.
+     */
+    const g = e.accelerationIncludingGravity
+    this.rawG = g
+      ? Math.sqrt((g.x || 0) ** 2 + (g.y || 0) ** 2 + (g.z || 0) ** 2)
+      : null
     // nowFine, not now: ctx.currentTime moves in 85 ms steps on this tablet, and
     // stamping hits with it put the whole of that staircase into her score.
     const now = this.engine.nowFine
