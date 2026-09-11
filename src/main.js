@@ -1977,18 +1977,46 @@ function armTunerGesture () {
   const logo = document.querySelector('.logo')
   if (!logo) return
   let timer = null
-  const cancel = () => { clearTimeout(timer); timer = null }
+  const cancel = () => {
+    clearTimeout(timer)
+    timer = null
+    logo.classList.remove('holding')
+  }
+  // The callout menu would otherwise claim the gesture before the timer fires.
+  logo.addEventListener('contextmenu', (e) => e.preventDefault())
   logo.addEventListener('pointerdown', () => {
+    logo.classList.add('holding')
     timer = setTimeout(() => {
+      logo.classList.remove('holding')
       // Reloads rather than calling runTuner directly: audio needs a fresh user gesture
       // to start, and the one that began this press is long gone by the time it fires.
       // Coming back through the front door means Play does the honours, as it always does.
       location.search = '?tune'
-    }, 900)
+    }, 800)
   })
   for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) {
     logo.addEventListener(ev, cancel)
   }
+
+  /*
+   * A second way in: five quick taps on the title.
+   *
+   * The long press was swallowed once already by Chrome's own text-selection gesture,
+   * and the CSS above should stop that happening again — but a hidden control with one
+   * route in is a hidden control that can silently stop existing, and this is the only
+   * way to reach the tuner on a device with no address bar. Short taps cannot collide
+   * with a long-press handler, so the two cannot fail together.
+   *
+   * Five, and inside three seconds: not something a child lands on while waiting to
+   * play, and not something a stray double tap becomes.
+   */
+  let taps = []
+  logo.addEventListener('click', () => {
+    const now = performance.now()
+    taps = taps.filter((t) => now - t < 3000)
+    taps.push(now)
+    if (taps.length >= 5) { taps = []; location.search = '?tune' }
+  })
 }
 armTunerGesture()
 
