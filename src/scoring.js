@@ -217,3 +217,43 @@ function detectWholeBeatShift (notes, hits, beatS) {
   // Strictly better, not merely equal: a late starter ties, and is not displaced.
   return coverage(shift * beatS) > coverage(0) ? shift : 0
 }
+
+/**
+ * One number that sums up an attempt.
+ *
+ * Four separate statistics are more than an eight-year-old should have to synthesise.
+ * A single score gives her something to beat, and something to watch move.
+ *
+ * Built out of, in order of weight:
+ *   - STEADINESS, because it is the thing she is actually training and the only metric
+ *     that does not depend on the latency calibration being right.
+ *   - COVERAGE, squared, because otherwise the winning strategy is to play three notes
+ *     beautifully and ignore the rest of the exercise.
+ *   - BEST STREAK, as a flat bonus, because it is the part she cares about.
+ *   - DIFFICULTY, as a multiplier on notes per minute, so the exercise ladder is worth
+ *     climbing instead of the top score living forever on quarter notes at 60 BPM.
+ *
+ * Deliberately independent of the chosen fussiness level. That setting changes how
+ * encouraging the words are, not how well she played, and a score that jumped when a
+ * parent touched a setting would mean nothing.
+ *
+ * The 90 ms scale is a typical beginner's spread, so a normal attempt lands in the
+ * hundreds and a good one in the high hundreds — big enough to feel like a score,
+ * with room above.
+ */
+export function scoreFor (stats, notesPerMinute) {
+  if (!stats.enough) return null
+
+  const steadiness = 1000 * Math.exp(-Math.max(0, stats.spreadMs) / 90)
+  const coverage = Math.pow(Math.max(0, Math.min(1, stats.coverage)), 2)
+  const streakBonus = 10 * (stats.bestStreak || 0)
+  const difficulty = Math.sqrt(Math.max(30, notesPerMinute) / 60)
+
+  const raw = (steadiness * coverage + streakBonus) * difficulty
+  return Math.max(0, Math.round(raw / 5) * 5)
+}
+
+/** Notes per minute an exercise asks for at a given tempo — the difficulty input. */
+export function notesPerMinute (exercise, bpm) {
+  return (exercise.notes.length / exercise.beatsPerBar) * bpm
+}

@@ -9,7 +9,8 @@
  * interface without touching anything in here.
  */
 
-import { TEMPO, BAND, DRUM_NAV, SCHEDULER, FUSION, CALIBRATION } from './config.js'
+import { TEMPO, BAND, DRUM_NAV, SCHEDULER, FUSION, CALIBRATION,
+  LEVELS, LEVEL_STORAGE_KEY, applyLevel } from './config.js'
 import { EXERCISES } from './exercises.js'
 import { AudioEngine } from './audio-engine.js'
 import { ClickSource } from './click-source.js'
@@ -20,7 +21,8 @@ import { MicInput } from './onset-detector.js'
 import { MotionInput } from './motion-detector.js'
 import { TimingModel } from './timing-model.js'
 import { probeOffsetSeconds, refractoryForSpacing } from './dsp-core.js'
-import { LiveScorer, summarise } from './scoring.js'
+import { LiveScorer, summarise, scoreFor, notesPerMinute } from './scoring.js'
+import * as history from './history.js'
 
 const $ = (id) => document.getElementById(id)
 const debug = new URLSearchParams(location.search).has('debug')
@@ -469,10 +471,83 @@ function finishExercise () {
     add('extra hits', stats.extras)
   }
 
+  // One number that combines the lot — see scoreFor() for what it weighs and why.
+  // Runs after the title is set, because a personal best rewrites it.
+  const score = scoreFor(stats, notesPerMinute(EXERCISES[state.exerciseIndex], state.bpm))
+  renderScore(score, EXERCISES[state.exerciseIndex].id)
+
+  // Offer the next level only when she is clearly beating this one, and only ever as
+  // an invitation. Tightening automatically would make identical playing start scoring
+  // worse for no reason she could see.
+  const idx = LEVELS.indexOf(level)
+  if (stats.enough && idx < LEVELS.length - 1 && stats.spreadMs < level.steady[0] * 0.8) {
+    toast(`You're ready for "${LEVELS[idx + 1].name}" when you want it!`, 5000)
+  }
+
   // Screen-reader summary: the one place a full sentence beats emoji.
   $('done-badge').setAttribute('role', 'status')
 
   armDrumToContinue()
+}
+
+/**
+ * The score, plus how it moved.
+ *
+ * Only ever framed as progress. A lower score shows a shorter bar rather than a red
+ * number, the running best stays in view so one bad attempt never erases a good one,
+ * and beating her own record gets its own moment.
+ */
+function renderScore (score, exerciseId) {
+  const box = $('scorebox')
+  if (score === null) { box.hidden = true; return }
+  box.hidden = false
+
+  const h = history.record({ score, exercise: exerciseId, bpm: state.bpm })
+
+  $('score-value').textContent = score
+
+  const delta = $('score-delta')
+  if (h.previous === null) {
+    delta.textContent = 'your first score!'
+    delta.className = 'up'
+  } else if (score > h.previous) {
+    delta.textContent = `+${score - h.previous} better than last time`
+    delta.className = 'up'
+  } else if (score === h.previous) {
+    delta.textContent = 'same as last time'
+    delta.className = ''
+  } else {
+    delta.textContent = `last time ${h.previous}`
+    delta.className = ''
+  }
+
+  // Best ever only when it isn't simply today's best repeated back at her.
+  const bests = []
+  if (h.attemptsToday > 1) bests.push(`best today ${h.bestToday}`)
+  if (h.bestEver > h.bestToday) bests.push(`best ever ${h.bestEver}`)
+  $('score-best').textContent = bests.join(' · ')
+
+  const spark = $('score-spark')
+  spark.innerHTML = ''
+  const top = Math.max(...h.recent, 1)
+  h.recent.forEach((v, i) => {
+    const bar = document.createElement('i')
+    bar.style.height = Math.max(4, Math.round((v / top) * 26)) + 'px'
+    if (v === top) bar.classList.add('best')
+    if (i === h.recent.length - 1) bar.classList.add('now')
+    spark.append(bar)
+  })
+
+  if (h.isBestEver) {
+    $('done-title').textContent = 'New best ever! 🎉'
+    confetti($('confetti'), 40)
+    toast('That is your best score yet!', 4000)
+  } else if (h.isBestToday) {
+    toast('Best of the day so far!', 3000)
+  }
+
+  $('play-sr').textContent =
+    `Score ${score}. ${delta.textContent}. ${bests.join('. ')}`
 }
 
 $('btn-again').addEventListener('click', () => { disarm(); startExercise(state.exerciseIndex) })
@@ -504,6 +579,52 @@ function armDrumToContinue () {
 
   disarm = () => { clearTimeout(timer); off(); disarm = () => {} }
 }
+
+// ------------------------------------------------------------ difficulty
+
+/**
+ * How fussy the app is about timing.
+ *
+ * A single fixed window can't serve a complete beginner and the same child six months
+ * later: tight enough to be meaningful later is demoralising now, and generous enough
+ * to be kind now stops telling her anything once she improves. So it's a setting, with
+ * kid-legible names rather than numbers.
+ *
+ * Persisted, like the latency measurement, because it describes the setup rather than
+ * how she did — scores still reset every session.
+ */
+let level = LEVELS[0]
+
+function loadLevel () {
+  try {
+    const id = localStorage.getItem(LEVEL_STORAGE_KEY)
+    const found = LEVELS.find((l) => l.id === id)
+    if (found) level = found
+  } catch { /* storage unavailable; the default is fine */ }
+  applyLevel(level)
+}
+
+function renderLevels () {
+  const host = $('level-buttons')
+  host.innerHTML = ''
+  for (const l of LEVELS) {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.textContent = l.name
+    b.setAttribute('aria-pressed', String(l.id === level.id))
+    b.addEventListener('click', () => {
+      level = l
+      applyLevel(level)
+      try { localStorage.setItem(LEVEL_STORAGE_KEY, l.id) } catch {}
+      renderLevels()
+      toast(`Timing check: ${l.name}`, 1800)
+    })
+    host.append(b)
+  }
+}
+
+loadLevel()
+renderLevels()
 
 // ---------------------------------------------------------- screen and sleep
 

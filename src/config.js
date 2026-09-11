@@ -13,12 +13,36 @@ export const TEMPO = {
   step: 5,
 }
 
-/** How close to the beat counts as what. Generous on purpose — she is eight. */
-export const WINDOWS = {
-  perfect: 40,   // ms either side
-  great: 80,
-  almost: 130,
-}
+/**
+ * How close to the beat counts as what, in milliseconds either side.
+ *
+ * Sized from what people can actually do. Tapping along to a metronome, adult
+ * non-musicians scatter with a standard deviation of roughly 20-50 ms, eight-year-olds
+ * more like 50-80 ms, trained musicians 10-20 ms, professionals 5-15 ms.
+ *
+ * An earlier ±40 ms "perfect" window meant a typical beginner saw a star on well under
+ * half her hits — most of her playing came back as a rabbit or a turtle. Worse, it was
+ * not even actionable: the smallest timing difference a person can reliably feel and
+ * correct is around 20-30 ms, so anything tighter reports noise she cannot do anything
+ * about.
+ *
+ * At LEARNING level a typical beginner lands a star roughly two thirds of the time,
+ * which is the point: often enough to feel good, not so often that improving stops
+ * showing up.
+ */
+export const LEVELS = [
+  { id: 'learning', name: 'Just starting',  perfect: 70, great: 110, almost: 165,
+    steady: [60, 90, 130] },
+  { id: 'getting',  name: 'Getting good',   perfect: 50, great: 85,  almost: 135,
+    steady: [42, 65, 95] },
+  { id: 'sharp',    name: 'Sharp ears',     perfect: 35, great: 62,  almost: 105,
+    steady: [28, 45, 70] },
+]
+
+export const LEVEL_STORAGE_KEY = 'drum-practice.level.v1'
+
+/** Filled in at start-up from the chosen level; see applyLevel() in main.js. */
+export const WINDOWS = { perfect: 70, great: 110, almost: 165 }
 
 export const METRONOME = {
   freqNormal: 900,      // Hz. 800-2000 is where small speakers are efficient and clean.
@@ -141,17 +165,41 @@ export const BAND = [
   { at: 16, emoji: '🐸', name: 'Frog',     label: 'Frog joins in on fiddle!' },
 ]
 
-/** Steadiness bands, in ms of spread. Names, never grades. */
+/**
+ * Steadiness bands, in ms of spread. Names, never grades.
+ *
+ * Also rescaled: the old top band needed 25 ms of spread, which is trained-musician
+ * territory. A normal eight-year-old would have scored the bottom badge every single
+ * session forever. Thresholds now come from the chosen level.
+ */
 export const STEADINESS = [
-  { under: 25,       badge: 'Steady as the river!', stars: 3 },
-  { under: 45,       badge: 'Real steady playing!', stars: 3 },
-  { under: 70,       badge: 'Getting steadier!',    stars: 2 },
+  { under: 45,       badge: 'Steady as the river!', stars: 3 },
+  { under: 70,       badge: 'Real steady playing!', stars: 3 },
+  { under: 100,      badge: 'Getting steadier!',    stars: 2 },
   { under: Infinity, badge: 'Keep on playing!',     stars: 1 },
 ]
 
-/** Drum-to-continue: deliberate hits only, never an accidental skip. */
+/** Swap in a difficulty level's numbers. Mutates in place so importers see the change. */
+export function applyLevel (level) {
+  WINDOWS.perfect = level.perfect
+  WINDOWS.great = level.great
+  WINDOWS.almost = level.almost
+  const [a, b, c] = level.steady
+  STEADINESS[0].under = a
+  STEADINESS[1].under = b
+  STEADINESS[2].under = c
+}
+
+/**
+ * Drum-to-continue: deliberate hits only, never an accidental skip.
+ *
+ * Two hits inside two and a half seconds turned out to be too easy to hit by accident —
+ * the room noise in the Phase 0 recordings alone fired the detector about once a second,
+ * which would have skipped her ahead on its own. Three hits close together is a gesture
+ * nothing but a person makes.
+ */
 export const DRUM_NAV = {
-  armDelayMs: 1000,     // ignore hits for this long after a screen appears
-  hitsNeeded: 2,
-  withinMs: 2500,
+  armDelayMs: 1500,     // ignore hits for this long after a screen appears
+  hitsNeeded: 3,
+  withinMs: 1500,
 }

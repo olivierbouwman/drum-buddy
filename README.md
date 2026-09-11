@@ -136,10 +136,32 @@ on the lane. `prefers-reduced-motion` calms the animation rather than removing t
 cue. Fully keyboard operable. All colours were contrast-checked against both background
 tones and pass WCAG AA, most AAA.
 
+## Score, and watching it move
+
+Each attempt ends with one number rather than four statistics, because four is more than
+an eight-year-old should have to synthesise. It weighs, in order:
+
+- **steadiness**, the thing she is actually training and the only part that does not
+  depend on the latency calibration being right;
+- **coverage**, squared, or the winning strategy would be to play three notes beautifully
+  and ignore the rest;
+- **best streak**, because it is the part she cares about;
+- **difficulty**, as a multiplier on notes per minute, so climbing the exercise ladder
+  pays and the high score does not live forever on quarter notes at 60 BPM.
+
+It is deliberately independent of the fussiness level: that setting changes how
+encouraging the words are, not how well she played.
+
+Scores are kept on the device (`localStorage`) so she can see "better than last time",
+"best today", and "best ever" — with a personal best getting its own moment. A worse
+attempt shows a shorter bar, never a red number, and the running best stays in view so
+one bad go never erases a good one.
+
 ## Privacy
 
-Audio is analysed in the page and discarded. Nothing is recorded, stored, or uploaded,
-and there are no network calls at runtime.
+Audio is analysed in the page and discarded. Nothing is recorded or uploaded, and there
+are no network calls at runtime. Scores, the chosen level, and the last measured latency
+are stored locally on the device and never leave it.
 
 ## Not affiliated with anything
 

@@ -171,9 +171,17 @@ export class Visuals {
   showVerdict (errorMs) {
     const a = Math.abs(errorMs)
     let kind, text
-    if (a <= WINDOWS.perfect) { kind = 'perfect'; text = '⭐ Perfect!' }
-    else if (errorMs < 0) { kind = 'quick'; text = a <= WINDOWS.almost ? '🐰 A bit quick!' : '🐰 Too quick!' }
-    else { kind = 'slow'; text = a <= WINDOWS.almost ? '🐢 A bit slow!' : '🐢 Too slow!' }
+    if (a <= WINDOWS.perfect) {
+      kind = 'perfect'; text = '⭐ Perfect!'
+    } else if (a <= WINDOWS.great) {
+      // Still a star. Close enough that naming a direction would be reporting noise
+      // she can't feel — the dot on the lane carries it if she wants to look.
+      kind = 'perfect'; text = '⭐ Nice!'
+    } else if (errorMs < 0) {
+      kind = 'quick'; text = a <= WINDOWS.almost ? '🐰 A bit quick!' : '🐰 Almost!'
+    } else {
+      kind = 'slow'; text = a <= WINDOWS.almost ? '🐢 A bit slow!' : '🐢 Almost!'
+    }
 
     this.verdict.dataset.kind = kind
     this.verdict.firstElementChild.textContent = text
@@ -193,7 +201,13 @@ export class Visuals {
     this._vTimer = setTimeout(() => this.verdict.classList.remove('show'), 500)
   }
 
-  /** Dots pile up on whichever side she leans — the pattern is the lesson. */
+  /**
+   * Dots pile up on whichever side she leans — the pattern is the lesson.
+   *
+   * Deliberately NOT softened along with the wording. The words are the encouraging
+   * channel; the dots are the honest one, and a drift she can see accumulating on one
+   * side is the single most useful thing on the screen.
+   */
   dropDot (errorMs, kind) {
     const span = WINDOWS.almost * 2
     const pct = 50 + Math.max(-48, Math.min(48, (errorMs / span) * 100))

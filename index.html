@@ -35,6 +35,11 @@
 
   <button id="btn-play" class="huge">▶ Play</button>
 
+  <div class="levels" role="group" aria-label="How fussy should I be about timing?">
+    <span class="levels-label" id="levels-label">How fussy?</span>
+    <div id="level-buttons"></div>
+  </div>
+
   <button id="btn-fullscreen" class="ghost" hidden>⛶ Full screen</button>
 
   <p class="fineprint" id="start-note">
@@ -102,8 +107,17 @@
   <h2 id="done-title" class="big-title">Nice playing!</h2>
   <div class="stars" id="done-stars" aria-hidden="true"></div>
   <p class="badge" id="done-badge">Getting Steadier!</p>
+
+  <div class="scorebox" id="scorebox" hidden>
+    <div class="score-value" id="score-value">0</div>
+    <div class="score-meta">
+      <span id="score-delta"></span>
+      <span id="score-best"></span>
+    </div>
+    <div class="score-spark" id="score-spark" aria-hidden="true"></div>
+  </div>
   <dl class="scoreboard" id="done-stats"></dl>
-  <p class="instruction" id="done-hint">Hit your pad twice to keep going</p>
+  <p class="instruction" id="done-hint">Hit your pad 3 times to keep going</p>
   <div class="row">
     <button id="btn-again" class="huge">Again</button>
     <button id="btn-next" class="huge alt">Next →</button>

@@ -124,6 +124,20 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
     radial-gradient(38% 50% at 82% -6%, #8ad8f21f, transparent 70%);
 }
 
+/* ------------------------------------------------------- difficulty */
+
+.levels { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; justify-content: center; }
+.levels-label { color: var(--muted); font-size: .85rem; }
+#level-buttons { display: flex; gap: .35rem; }
+#level-buttons button {
+  background: #ffffff14; color: var(--muted);
+  border: 2px solid transparent;
+  padding: .4em 1em; font-size: .85rem; font-weight: 700; min-height: 40px;
+}
+#level-buttons button[aria-pressed="true"] {
+  background: var(--kraft); color: #33240f; border-color: var(--ink);
+}
+
 /* ------------------------------------------------------------- band */
 
 .band-row { display: flex; gap: clamp(.4rem, 2vw, 1.2rem); align-items: flex-end; }
@@ -306,6 +320,20 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 .streak b { color: var(--hot); font-size: 1.35rem; font-family: var(--font-display); }
 
 /* ------------------------------------------------------------- done */
+
+.scorebox { display: flex; flex-direction: column; align-items: center; gap: .2rem; }
+.score-value {
+  font-family: var(--font-display); font-weight: 700;
+  font-size: clamp(2.6rem, 12vw, 4.6rem); line-height: 1;
+  color: var(--ink); text-shadow: 0 0 30px #ffc85744;
+}
+.score-meta { display: flex; gap: 1rem; font-size: .9rem; color: var(--muted); font-weight: 700; }
+.score-meta .up { color: var(--ok); }
+/* Attempts so far this session, tallest = best. Shape carries the trend, not colour. */
+.score-spark { display: flex; align-items: flex-end; gap: 3px; height: 26px; margin-top: .35rem; }
+.score-spark i { width: 8px; background: var(--line); border-radius: 2px 2px 0 0; }
+.score-spark i.best { background: var(--hot); }
+.score-spark i.now { outline: 2px solid var(--ink); outline-offset: 1px; }
 
 .stars { font-size: clamp(2.2rem, 12vw, 4rem); letter-spacing: .1em; }
 .badge {
