@@ -61,7 +61,9 @@ export class SelfTest {
     for (let i = 0; i < 6; i++) {
       this.clicks.playAt('beat', t)
       this.timing.expectClick(t)
-      t += 0.45
+      // Spaced wider than any plausible round trip; otherwise a click heard now is
+      // ambiguous between the one just played and the one before it.
+      t += 1.0
     }
     await new Promise((r) => setTimeout(r, (t - this.engine.now + 0.4) * 1000))
 

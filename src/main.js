@@ -273,9 +273,11 @@ async function runWarmup () {
   // --- listening phase: metronome only, nobody playing ---
   $('warmup-msg').textContent = 'Shhh… listening to your room 🤫'
   inSilentWindow = true
-  const gap = 0.42
+  // Wider than any plausible round trip, so each click heard can only be the one just
+  // played. Tighter spacing made the measurement ambiguous on a slow audio stack.
+  const gap = 0.95
   let t = engine.now + 0.25
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 5; i++) {
     clicks.playAt(i === 0 ? 'accent' : 'beat', t)
     timing.expectClick(t)
     const when = Math.max(0, engine.audibleAt(t) - performance.now())

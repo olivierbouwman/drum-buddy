@@ -133,12 +133,26 @@ export const FUSION = {
 
 export const CALIBRATION = {
   clicks: 12,
-  minGapS: 0.38,
-  maxGapS: 0.52,
+  /**
+   * Calibration clicks must be spaced FURTHER APART than the latency being measured, or
+   * a click heard now is ambiguous between the one just played and the one before it.
+   * At 0.42 s apart against a 394 ms round trip the measurement was meaningless.
+   */
+  minGapS: 0.95,
+  maxGapS: 1.15,
   discardFirst: 3,
   acceptSpreadMs: 8,     // MAD-derived; above this we don't trust the number
   plausibleMinMs: 15,
-  plausibleMaxMs: 400,
+  /**
+   * Anything slower than this is taken to be a mis-match rather than a measurement.
+   *
+   * Was 400 ms, which this very tablet had already been measured at 394 ms — sitting on
+   * the limit, and once past it EVERY reading was thrown away as implausible and the app
+   * never got a latency at all. The bound exists only to catch a click matched to the
+   * wrong beat, so it needs to sit below the gap between clicks, not near any real
+   * device's latency. Android audio stacks genuinely reach half a second.
+   */
+  plausibleMaxMs: 900,
   /**
    * MEASURED 353 ms round trip on Android Chrome — with a spread of 0.0 ms across ten
    * clicks. The original plan refused to score above 250 ms on the assumption that a

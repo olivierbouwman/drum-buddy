@@ -108,6 +108,20 @@ export class TimingModel {
       return false
     }
 
+    /*
+     * Once the latency is known, refuse readings wildly far from it.
+     *
+     * At a fast tempo the gap between clicks can approach the latency itself, and then
+     * a click heard now is ambiguous between the one just played and the one before —
+     * which yields a small, steady, entirely wrong number that looks perfectly healthy.
+     * The warm-up establishes the real value using widely spaced clicks; this keeps a
+     * wrap-around from quietly replacing it, while still leaving room for the genuine
+     * drift this hardware shows (measured at 41 ms within one session).
+     */
+    if (this.latencyS !== null && !this.approximate) {
+      if (Math.abs(ms - this.latencyS * 1000) > 250) return false
+    }
+
     this.window.push(ms)
     this.pending = this.pending.filter((s) => s !== best)
     this._recompute()
