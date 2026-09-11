@@ -10,7 +10,7 @@
  *   onNote   - every note the exercise expects her to play (what we score against)
  */
 
-import { SCHEDULER } from './config.js'
+import { SCHEDULER, METRONOME } from './config.js'
 
 export class Scheduler {
   constructor (engine, clicks) {
@@ -82,10 +82,19 @@ export class Scheduler {
       const beatInBar = (this.nextBeat - this.countIn) % this.exercise.beatsPerBar
       const accent = inCountIn ? true : beatInBar === 0
 
-      this.clicks.playAt(this.thumpMode ? 'thump' : (accent ? 'accent' : 'beat'), t)
+      /*
+       * `t` is the beat. `emitAt` is when the speaker has to be told, which is slightly
+       * earlier so the sound LANDS on the beat — see METRONOME.nudgeMs. Only the second
+       * of those two moves; everything scored or drawn keeps using `t`.
+       */
+      const emitAt = Math.max(this.engine.now, t - METRONOME.nudgeMs / 1000)
+      this.clicks.playAt(this.thumpMode ? 'thump' : (accent ? 'accent' : 'beat'), emitAt)
       this._onClick({
         index: this.nextBeat,
         time: t,
+        // When the speaker was actually told, which is what the click probe has to
+        // measure against — the round trip is from emission, not from the beat.
+        emitAt,
         accent,
         countIn: inCountIn,
         countLabel: inCountIn ? String(this.nextBeat + 1) : String(beatInBar + 1),

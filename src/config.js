@@ -88,6 +88,28 @@ export const METRONOME = {
    * the level is the cheapest bleed mitigation there is.
    */
   maxGain: 0.25,
+
+  /*
+   * Play each click this many milliseconds early.
+   *
+   * Not a fudge factor, and deliberately NOT a shift of the beat grid or the visuals.
+   *
+   * The app predicts a click scheduled at time T will be heard at T plus the browser's
+   * reported output latency, and it draws the falling note to cross the line at exactly
+   * that moment. If the browser under-reports — Android's estimate is a nominal figure,
+   * not a measurement — the sound comes out after the line has already crossed, and it
+   * feels late. Reported as exactly that on the tablet.
+   *
+   * Emitting early by the shortfall makes the sound arrive when the app already said it
+   * would, which is when the line crosses and when the grid says the beat is. Nothing
+   * downstream moves: her hits are still scored against the same grid, so this cannot
+   * flatter or punish her playing. It only stops the speaker running behind everything
+   * else that is trying to agree with it.
+   *
+   * Raise it if the beep still feels late, lower it if it starts to feel early. Zero
+   * disables it and restores exactly the old behaviour.
+   */
+  nudgeMs: 30,
 }
 
 export const SCHEDULER = {

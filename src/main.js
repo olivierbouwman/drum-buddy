@@ -1031,7 +1031,7 @@ function startExercise (index, step = null) {
   scheduler.onClick((beat) => {
     // Tell the timing model when we asked for this click; the microphone will report
     // when it actually came back, and the gap keeps K current.
-    timing.expectClick(beat.time)
+    timing.expectClick(beat.emitAt ?? beat.time)
 
     // Bleed can only be measured honestly while she is definitely not playing. The
     // count-in guarantees exactly that, at the start of every single exercise — so the

@@ -12,6 +12,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { TimingModel } from '../src/timing-model.js'
+import { METRONOME } from '../src/config.js'
 import { ClickProbe, probeOffsetSeconds } from '../src/dsp-core.js'
 import { readWav } from '../tools/wav.mjs'
 
@@ -168,6 +169,41 @@ console.log('\nthe pad correction is not the speaker correction twice')
   const toScoreOnBeat = perfect + OUT
   check('which is why the pad had to be hit 171 ms after the sound',
     near(doubled.correct(toScoreOnBeat, 'motion'), 10, 0.002))
+}
+
+console.log('\nthe metronome nudge moves the sound, not the goalposts')
+{
+  /*
+   * The nudge exists because the browser under-reports output latency, so the click
+   * comes out after the app said it would. Emitting early cancels that. The thing it
+   * must never do is move what counts as on-time.
+   */
+  const OUT = 0.171
+  const SENSOR = 0.014
+  const nudge = METRONOME.nudgeMs / 1000
+
+  const m = new TimingModel()
+  m.setMotionTiming({ outputLatencyS: OUT, motionDelayS: SENSOR })
+
+  // The grid is unchanged, so a hit in the same physical place scores the same whether
+  // the nudge is on or off. This is the property that makes it safe.
+  const perfect = 10 + OUT + SENSOR
+  check('the nudge does not change what a hit scores',
+    near(m.correct(perfect, 'motion'), 10, 0.0005))
+
+  // What it does change: a click for the beat at t=10 is handed to the speaker early.
+  const emitAt = 10 - nudge
+  check('the click is emitted before its beat', emitAt < 10)
+  check('and by the configured amount', near((10 - emitAt) * 1000, METRONOME.nudgeMs, 0.001))
+
+  // If the browser is short by exactly the nudge, the sound now lands on the beat.
+  const trueLatency = OUT + nudge
+  check('with the browser short by the nudge, the sound lands on the beat',
+    near(emitAt + trueLatency, 10 + OUT, 0.0005))
+
+  // A sanity bound: a nudge bigger than a beat would reorder the metronome.
+  check('the nudge is small compared with any tempo we use',
+    METRONOME.nudgeMs < 60000 / 200, `${METRONOME.nudgeMs} ms`)
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`)
