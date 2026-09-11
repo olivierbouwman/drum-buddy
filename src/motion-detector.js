@@ -95,6 +95,21 @@ export class MotionInput extends InputSource {
     this._onLevel(mag / (threshold || 1), mag)
 
     if (mag > threshold) {
+      /*
+       * Both are recorded, and they are used for different things.
+       *
+       * A stick on rubber is so sharp that it peaks on the very sample it crosses the
+       * threshold — checked against her trace, the median gap is 0 ms — and the peak is
+       * the steadier of the two (51 ms of spread against 71 ms), because a partially
+       * captured rise makes the onset sample jittery at 50 Hz. So HITS use the peak.
+       *
+       * A soft finger tap on glass is not sharp, and peaks well after it begins. Timing
+       * the screen-tap calibration by its peak measured the pad's delay 88 ms too high
+       * and put exactly that much systematic error into her scoring. So CALIBRATION uses
+       * the onset, which is the moment of contact for both kinds of event and therefore
+       * the only fair comparison between them.
+       */
+      if (!this.rising) this.onsetAt = now
       if (mag > this.peak) { this.peak = mag; this.peakAt = now }
       this.rising = true
     } else if (this.rising) {
@@ -102,6 +117,7 @@ export class MotionInput extends InputSource {
         this.lastHit = this.peakAt
         this.emit({
           time: this.peakAt,
+          onsetTime: this.onsetAt,
           strength: this.peak,
           source: 'motion',
           // Flagged so nothing downstream takes a timestamp from here while the

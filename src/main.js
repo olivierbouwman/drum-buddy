@@ -450,7 +450,11 @@ async function measureMotionDelay () {
     taps.push(t)
     if (dots.children[taps.length - 1]) dots.children[taps.length - 1].classList.add('got')
   }
-  const offMotion = onHits((hit) => { if (hit.source === 'motion') spikes.push(hit.time) })
+  // Onset, not peak: a finger tap peaks well after it lands, and timing it by the peak
+  // measured the pad's delay 88 ms too high. A stick peaks on the sample it arrives.
+  const offMotion = onHits((hit) => {
+    if (hit.source === 'motion') spikes.push(hit.onsetTime ?? hit.time)
+  })
   document.addEventListener('pointerdown', onTap)
 
   const started = engine.now

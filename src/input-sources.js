@@ -117,6 +117,7 @@ export class FusedInput extends InputSource {
           this.emit({
             ...hit,
             time: t,
+            onsetTime: hit.onsetTime,
             corroborated: this._sawMic(t),
             timingTrusted: true,
             source: 'motion',
