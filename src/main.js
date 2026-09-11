@@ -468,6 +468,26 @@ function watchForDeafness (peak) {
  */
 async function measureMotionDelay () {
   if (!motion || !motion.available) return
+
+  /*
+   * Skip it once the answer has settled.
+   *
+   * The tablet, the stand and the pad do not change between sessions, so neither does
+   * this number — and after several measurements the running median is steadier than
+   * any single day's five taps. Re-measuring daily then costs her twenty seconds of the
+   * five minutes and buys nothing.
+   *
+   * Still re-taken every fifth session, so a genuinely different setup works its way in
+   * rather than being locked out forever.
+   */
+  const settled = padDelayHistory()
+  if (settled.length >= 5 && settled.length % 5 !== 0) {
+    motionDelayS = medianOf(settled)
+    padDelayHistoryMs = settled.map((v) => Math.round(v * 1000))
+    applyMotionTiming()
+    if (debug) console.log('[drum-buddy] pad delay settled at', Math.round(motionDelayS * 1000), 'ms; skipping taps')
+    return
+  }
   const dots = $('warmup-dots')
   const target = $('tap-target')
   const label = $('tap-target-label')
@@ -562,19 +582,27 @@ let tapKept = 0
  * median across the last several keeps it steady while still letting a genuine change —
  * a different stand, a different surface — work its way in after a few runs.
  */
-function rememberPadDelay (measuredS) {
-  let history = []
+function padDelayHistory () {
   try {
     const raw = localStorage.getItem(PAD_DELAY_KEY)
-    if (raw) history = JSON.parse(raw).filter((v) => typeof v === 'number')
-  } catch { /* storage unavailable; today's measurement stands alone */ }
+    const v = raw ? JSON.parse(raw) : []
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'number') : []
+  } catch { return [] }
+}
+
+const medianOf = (xs) => {
+  const s = [...xs].sort((a, b) => a - b)
+  return s[s.length >> 1]
+}
+
+function rememberPadDelay (measuredS) {
+  const history = padDelayHistory()
 
   history.push(measuredS)
   if (history.length > 7) history.shift()
   try { localStorage.setItem(PAD_DELAY_KEY, JSON.stringify(history)) } catch {}
 
-  const sorted = [...history].sort((a, b) => a - b)
-  const median = sorted[sorted.length >> 1]
+  const median = medianOf(history)
   if (debug) {
     console.log('[drum-buddy] pad delay: today', Math.round(measuredS * 1000),
       'ms, using', Math.round(median * 1000), 'ms from', history.length, 'sessions')
@@ -1555,6 +1583,8 @@ function snapshot () {
     exercise: EXERCISES[state.exerciseIndex]?.id,
     bpm: state.bpm,
     level: level.id,
+    // Anything that blew up, so a silent failure on the tablet is not invisible.
+    errors: runtimeErrors,
       }
 }
 
