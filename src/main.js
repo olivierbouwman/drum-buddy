@@ -765,6 +765,15 @@ function rememberPadDelay (measuredS) {
 }
 
 /** No measurement today: the sensor's delay is a constant of this hardware. */
+/** The click's head start, from the tuned value if there is one. */
+function nudgeForNow () {
+  const tuned = storedNudgeMs()
+  return speakerNudgeS(
+    engine.baseLatency, timing.latencyS, engine.outputLatency,
+    METRONOME.nudgeMs / 1000, METRONOME.nudgeMaxMs / 1000,
+    tuned === null ? null : tuned / 1000)
+}
+
 function useDefaultPadDelay () {
   // A hand-set value outranks both the stored measurements and the constant, for the
   // same reason the tuned nudge outranks its derivations: it was checked against the
@@ -1148,6 +1157,15 @@ function startExercise (index, step = null) {
   for (let i = 1; i < offsets.length; i++) minGap = Math.min(minGap, offsets[i] - offsets[i - 1])
   if (mic && mic.available) mic.setRefractoryMs(refractoryForSpacing(minGap * beatS))
 
+  /*
+   * Before start(), because start() runs a tick synchronously.
+   *
+   * This was set thirty-odd lines further down, and Scheduler.start() calls _tick()
+   * immediately — so the opening beats of every exercise were scheduled with whatever
+   * nudge was left over from the previous one, or on the first exercise of a session
+   * with no nudge at all, which is the flat default rather than the tuned value.
+   */
+  scheduler.nudgeS = nudgeForNow()
   scheduler.start(ex, state.bpm)
 
   if (state.step) {
@@ -1184,11 +1202,9 @@ function startExercise (index, step = null) {
    * the first exercise of a session — so the nudge silently fell back to its default and
    * the fix did nothing on exactly the run it was meant to fix.
    */
-  const tunedMs = storedNudgeMs()
-  scheduler.nudgeS = speakerNudgeS(
-    engine.baseLatency, timing.latencyS, engine.outputLatency,
-    METRONOME.nudgeMs / 1000, METRONOME.nudgeMaxMs / 1000,
-    tunedMs === null ? null : tunedMs / 1000)
+  // Kept here as well as before start(): the value can only be final once ensureLatency
+  // has run, and a later exercise in the same session must not inherit the last one's.
+  scheduler.nudgeS = nudgeForNow()
   /*
    * There used to be a warning here when the timing was "approximate".
    *
@@ -2086,7 +2102,21 @@ function storedPadDelayMs () {
     const raw = localStorage.getItem(PAD_TRIM_KEY)
     if (raw === null) return null
     const v = Number(raw)
-    return Number.isFinite(v) ? v : null
+    if (!Number.isFinite(v)) return null
+    /*
+     * Zero is not a value anyone chose.
+     *
+     * An earlier build wrote this key merely for opening the tuner, and what it wrote
+     * was the module default of 0 — so tablets are carrying a pinned zero that no one
+     * set and that makes the app expect hits late. A real accelerometer cannot report a
+     * strike the instant it happens, so zero is not a reading, it is that bug. Discard
+     * it and fall through to the measured value.
+     */
+    if (v === 0) {
+      try { localStorage.removeItem(PAD_TRIM_KEY) } catch {}
+      return null
+    }
+    return v
   } catch { return null }
 }
 
@@ -2213,24 +2243,40 @@ async function runTuner () {
    * offset in the same direction as the misfeel, the sensor delay is wrong and this is
    * the knob for it.
    */
-  let padMs = storedPadDelayMs() ?? Math.round(motionDelayS * 1000)
+  /*
+   * Start from exactly what practice would use, and write nothing until asked.
+   *
+   * Both halves of that were wrong and together they made tuning actively harmful. The
+   * initial value came from motionDelayS, which the tuner never populates because it
+   * skips the warm-up — so it read the module default of ZERO rather than the 15-21 ms
+   * the app actually runs with. And applyPad() saved on load, so merely opening this
+   * screen pinned a pad delay of zero, which makes the app expect hits later and puts
+   * the sound after her stroke. Tuning broke the thing it was there to fix.
+   *
+   * useDefaultPadDelay() is the same call practice makes, so whatever it decides is what
+   * is shown here — and nothing is stored unless a button is actually pressed.
+   */
+  useDefaultPadDelay()
+  let padMs = Math.round(motionDelayS * 1000)
   const padValue = $('pad-value')
   const padLive = $('pad-live')
   const errors = []
 
-  const applyPad = () => {
+  const showPad = () => {
     padValue.textContent = String(padMs)
     motionDelayS = padMs / 1000
     applyMotionTiming()
-    try { localStorage.setItem(PAD_TRIM_KEY, String(padMs)) } catch {}
   }
-  applyPad()
+  showPad()
 
   const bumpPad = (delta) => {
     padMs = Math.max(0, Math.min(padMs + delta, MOTION.padDelayMaxMs))
     errors.length = 0
     padLive.textContent = '—'
-    applyPad()
+    showPad()
+    // Only now is it a decision worth remembering.
+    try { localStorage.setItem(PAD_TRIM_KEY, String(padMs)) } catch {}
+    timing.pinPadDelay(true)
   }
   $('pad-up').addEventListener('click', () => bumpPad(STEP))
   $('pad-down').addEventListener('click', () => bumpPad(-STEP))
