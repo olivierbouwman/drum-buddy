@@ -90,11 +90,36 @@
   <button id="btn-skip-warmup" class="ghost">Skip</button>
 </section>
 
+<!-- ---------------------------------------------------------------- today -->
+<section id="screen-today" class="screen" aria-labelledby="today-title">
+  <h2 id="today-title" class="big-title">Today's practice</h2>
+  <p class="streakline" id="today-streak"></p>
+  <ol class="plan" id="today-plan"></ol>
+  <button id="btn-start-session" class="huge">Start ▶</button>
+  <button id="btn-today-back" class="ghost">Back</button>
+</section>
+
+<!-- --------------------------------------------------------- session done -->
+<section id="screen-session" class="screen" aria-labelledby="session-title">
+  <div class="confetti" id="session-confetti" aria-hidden="true"></div>
+  <h2 id="session-title" class="big-title">Practice done! 🎉</h2>
+  <div class="stars" id="session-stars" aria-hidden="true"></div>
+  <p class="streakline" id="session-streak"></p>
+  <dl class="scoreboard" id="session-stats"></dl>
+  <div class="row">
+    <button id="btn-bonus" class="huge alt">One more? 🥁</button>
+    <button id="btn-session-done" class="huge">All done</button>
+  </div>
+</section>
+
 <!-- ------------------------------------------------------------- practice -->
 <section id="screen-play" class="screen" aria-labelledby="ex-name">
   <header class="bar">
     <button id="btn-quit" class="ghost small" aria-label="Stop and go back">✕</button>
-    <div class="ex-label"><span id="ex-name">Right hand</span></div>
+    <div class="ex-label">
+      <span id="ex-step" class="ex-step"></span>
+      <span id="ex-name">Right hand</span>
+    </div>
     <div class="tempo" role="group" aria-label="Tempo">
       <button id="btn-slower" class="ghost small" aria-label="Slower">−</button>
       <span id="bpm-readout" aria-live="off">60</span>
@@ -108,13 +133,11 @@
     <div class="lanes" id="lanes" aria-hidden="true">
       <div class="lane" data-hand="L">
         <div class="notes" id="notes-L"></div>
-        <div class="pad" id="pad-L"></div>
         <div class="strike" id="strike-L"></div>
         <div class="handtag">L</div>
       </div>
       <div class="lane" data-hand="R">
         <div class="notes" id="notes-R"></div>
-        <div class="pad" id="pad-R"></div>
         <div class="strike" id="strike-R"></div>
         <div class="handtag">R</div>
       </div>

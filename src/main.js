@@ -11,7 +11,7 @@
 
 import { TEMPO, DRUM_NAV, SCHEDULER, FUSION, CALIBRATION, DETECTOR,
   LEVELS, LEVEL_STORAGE_KEY, applyLevel } from './config.js'
-import { EXERCISES } from './exercises.js'
+import { EXERCISES, byId } from './exercises.js'
 import { AudioEngine } from './audio-engine.js'
 import { ClickSource } from './click-source.js'
 import { Scheduler } from './scheduler.js'
@@ -27,6 +27,7 @@ import { startDiagnostics, sendSession, wavFromFloat, diagnosticsActive } from '
 import { LiveScorer, summarise, scoreFor, notesPerMinute } from './scoring.js'
 import * as history from './history.js'
 import * as players from './players.js'
+import { buildPlan, bonusStep } from './practice-plan.js'
 import { assess } from './level-coach.js'
 
 const $ = (id) => document.getElementById(id)
@@ -60,6 +61,11 @@ const state = {
   lastStats: null,
   /** How hard she actually hits, so room noise can be told apart from a real strike. */
   hitStrengths: [],
+  /** Today's plan, and where we are in it. */
+  plan: null,
+  stepIndex: 0,
+  sessionStars: 0,
+  sessionScores: [],
   /** Every detection this exercise, with its features — for offline replay. */
   detections: [],
   /** The accelerometer trace, so the two sensors can be compared after the fact. */
@@ -353,7 +359,7 @@ async function runWarmup () {
       off()
       $('warmup-msg').textContent = 'Got it! 🎉'
       applyAutoTune()
-      setTimeout(() => startExercise(state.exerciseIndex), 700)
+      setTimeout(showToday, 700)
     }
   })
 
@@ -363,11 +369,11 @@ async function runWarmup () {
       off()
       if (got === 0) toast('I couldn’t hear your drum — you can tap the screen too', 5000)
       applyAutoTune()
-      startExercise(state.exerciseIndex)
+      showToday()
     }
   }, 15000)
 
-  $('btn-skip-warmup').onclick = () => { clearTimeout(bail); off(); applyAutoTune(); startExercise(state.exerciseIndex) }
+  $('btn-skip-warmup').onclick = () => { clearTimeout(bail); off(); applyAutoTune(); showToday() }
 }
 
 /** Drive both meters at once; they exist on the warm-up and the practice screens. */
@@ -593,17 +599,111 @@ function onHits (fn) {
   }
 }
 
+// --------------------------------------------------------------- session
+
+/**
+ * Today's five minutes.
+ *
+ * The same four steps every day — warm up, work on one thing twice, finish on something
+ * she can already play — because that is how a teacher structures a beginner's practice
+ * and because the ritual is worth something in itself. What changes is which exercise
+ * sits in the middle, and how fast; see practice-plan.js for why that moves so slowly.
+ *
+ * Shown before she starts so she can see the whole thing is short. "Five minutes and
+ * you're done" is a much easier ask than an open-ended session.
+ */
+function showToday () {
+  state.plan = buildPlan(history.load())
+  state.stepIndex = 0
+  state.sessionStars = 0
+  state.sessionScores = []
+
+  const { streak, total } = history.days()
+  $('today-streak').textContent = streak > 1
+    ? `🔥 ${streak} days in a row!`
+    : total > 0 ? `${total} day${total === 1 ? '' : 's'} of drumming so far` : 'Your first practice!'
+
+  renderPlan()
+  show('today')
+}
+
+function renderPlan () {
+  const ol = $('today-plan')
+  ol.innerHTML = ''
+  state.plan.steps.forEach((step, i) => {
+    const ex = byId(step.id)
+    const li = document.createElement('li')
+    if (i < state.stepIndex) li.classList.add('done')
+    if (i === state.stepIndex) li.classList.add('now')
+    li.innerHTML = '<span class="n"></span><span><span class="what"></span><br><span class="how"></span></span>'
+    li.querySelector('.n').textContent = i < state.stepIndex ? '✓' : String(i + 1)
+    li.querySelector('.what').textContent = `${step.label}: ${ex.name}`
+    li.querySelector('.how').textContent = `${step.bars} bars at ${step.bpm} BPM`
+    ol.append(li)
+  })
+}
+
+function runStep () {
+  const step = state.plan.steps[state.stepIndex]
+  if (!step) return finishSession()
+  startExercise(EXERCISES.findIndex((e) => e.id === step.id), step)
+}
+
+/** A bonus is never part of the plan — it only exists for the days she wants more. */
+function runBonus () {
+  const step = bonusStep(history.load(), state.plan)
+  state.plan.steps.push(step)
+  state.stepIndex = state.plan.steps.length - 1
+  runStep()
+}
+
+function finishSession () {
+  show('session')
+  confetti($('session-confetti'), 40)
+
+  const { streak, total } = history.days()
+  const best = state.sessionScores.length ? Math.max(...state.sessionScores) : 0
+  const stars = Math.min(3, Math.round(state.sessionStars / Math.max(1, state.sessionScores.length)))
+
+  $('session-stars').textContent = '⭐'.repeat(stars) + '☆'.repeat(3 - stars)
+  $('session-streak').textContent = streak > 1
+    ? `🔥 ${streak} days in a row!`
+    : `${total} day${total === 1 ? '' : 's'} of drumming`
+
+  const dl = $('session-stats')
+  dl.innerHTML = ''
+  const add = (k, v) => {
+    const dt = document.createElement('dt'); dt.textContent = k
+    const dd = document.createElement('dd'); dd.textContent = v
+    dl.append(dt, dd)
+  }
+  add('Best score', String(best))
+  add('Worked on', byId(state.plan.focusId).name)
+  $('play-sr').textContent =
+    `Practice finished. Best score ${best}. ${streak} days in a row.`
+}
+
+$('btn-start-session').addEventListener('click', () => { state.stepIndex = 0; runStep() })
+$('btn-today-back').addEventListener('click', () => abortToStart())
+$('btn-bonus').addEventListener('click', runBonus)
+$('btn-session-done').addEventListener('click', () => abortToStart())
+
 // ------------------------------------------------------------------ play
 
 let offHits = null
 
-function startExercise (index) {
+function startExercise (index, step = null) {
   // Always tear down first. Without this a second call while one is running leaves the
   // old hit listener subscribed, and every hit gets recorded twice — which shows up as
   // a pile of phantom "extra hits" rather than as an obvious crash.
   stopPlay()
 
-  const ex = EXERCISES[index]
+  // A plan step overrides length and tempo: the warm-up is short and slow, the focus is
+  // longer, and the tempo is whatever she has earned on that exercise.
+  const base = EXERCISES[index] || EXERCISES[0]
+  const ex = step ? { ...base, bars: step.bars } : base
+  state.step = step
+  if (step) state.bpm = step.bpm
   state.exerciseIndex = index
   state.hits = []
   state.notes = []
@@ -612,6 +712,9 @@ function startExercise (index) {
 
   show('play')
   $('ex-name').textContent = ex.name
+  $('ex-step').textContent = step && state.plan
+    ? `${Math.min(state.stepIndex + 1, state.plan.steps.length)}/${state.plan.steps.length} · ${step.label}`
+    : ''
   $('ex-tip').textContent = ex.tip
   $('bpm-readout').textContent = state.bpm
   $('play-sr').textContent =
@@ -753,6 +856,8 @@ function stopPlay () {
 }
 
 function abortToStart () {
+  clearTimeout(stepTimer)
+  state.step = null
   stopPlay()
   letSleep()
   show('start')
@@ -840,7 +945,28 @@ function finishExercise () {
   // Screen-reader summary: the one place a full sentence beats emoji.
   $('done-badge').setAttribute('role', 'status')
 
+  if (state.step) {
+    // Mid-session: the result is a moment, not a destination. Keep the momentum.
+    state.sessionStars += stats.stars || 0
+    if (score !== null) state.sessionScores.push(score)
+    $('done-hint').textContent = 'Next in a moment…'
+    $('btn-next').textContent = 'Next →'
+    clearTimeout(stepTimer)
+    stepTimer = setTimeout(advanceStep, 4500)
+    return
+  }
+
   armDrumToContinue()
+}
+
+let stepTimer = null
+
+function advanceStep () {
+  clearTimeout(stepTimer)
+  disarm()
+  state.stepIndex++
+  if (state.stepIndex >= state.plan.steps.length) finishSession()
+  else runStep()
 }
 
 /**
@@ -966,8 +1092,16 @@ function renderScore (score, exerciseId) {
     `Score ${score}. ${delta.textContent}. ${bests.join('. ')}`
 }
 
-$('btn-again').addEventListener('click', () => { disarm(); startExercise(state.exerciseIndex) })
-$('btn-next').addEventListener('click', () => { disarm(); nextExercise() })
+$('btn-again').addEventListener('click', () => {
+  clearTimeout(stepTimer)
+  disarm()
+  startExercise(state.exerciseIndex, state.step)
+})
+$('btn-next').addEventListener('click', () => {
+  disarm()
+  if (state.step) advanceStep()
+  else nextExercise()
+})
 $('btn-home').addEventListener('click', () => { disarm(); abortToStart() })
 
 function nextExercise () {

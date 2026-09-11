@@ -9,7 +9,7 @@
     "build": "npm run worklet && vite build",
     "preview": "vite preview",
     "analyse": "node tools/analyse.mjs",
-    "test": "node test/scoring.test.mjs && node test/timing.test.mjs && node test/autotune.test.mjs && node test/level.test.mjs",
+    "test": "node test/scoring.test.mjs && node test/timing.test.mjs && node test/autotune.test.mjs && node test/level.test.mjs && node test/plan.test.mjs",
     "worklet": "node tools/build-worklet.mjs"
   },
   "devDependencies": {

@@ -19,12 +19,15 @@ const runs = (id, n, spread, bpm = 60) =>
 console.log('\nthe shape is the same every day')
 {
   const plan = buildPlan([])
-  check('four steps', plan.steps.length === 4, String(plan.steps.length))
   check('starts with a warm-up', plan.steps[0].kind === 'warmup')
-  check('warm-up is alternating hands', plan.steps[0].id === 'singles')
   check('warm-up is slower than the default', plan.steps[0].bpm < 60, String(plan.steps[0].bpm))
   check('the focus is repeated', plan.steps[1].id === plan.steps[2].id)
-  check('ends on a finisher', plan.steps[3].kind === 'finisher')
+  // A beginner has no favourite yet, and inventing one just repeats the focus a third
+  // time — three of four steps identical, which reads as a very boring plan.
+  check('a beginner gets three steps, not a padded four', plan.steps.length === 3,
+    String(plan.steps.length))
+  check('a beginner does not warm up on something harder than the focus',
+    plan.steps[0].id !== 'singles', plan.steps[0].id)
 }
 
 console.log('\nit does not race ahead')
@@ -57,10 +60,14 @@ console.log('\nthe finisher is something she can actually play')
 {
   const first = EXERCISES[0].id
   const plan = buildPlan(runs(first, 4, 40))
-  check('finishes on the thing she has mastered', plan.steps[3].id === first, plan.steps[3].id)
-  check('and works on the next one', plan.focusId === EXERCISES[1].id)
-  check('before anything is solid, it still has a finisher',
-    typeof buildPlan([]).steps[3].id === 'string')
+  check('a finisher appears once something is mastered',
+    plan.steps.length === 4 && plan.steps[3].kind === 'finisher', String(plan.steps.length))
+  check('and it is the thing she mastered', plan.steps[3].id === first, plan.steps[3].id)
+  check('and she works on the next one', plan.focusId === EXERCISES[1].id)
+  // Once alternating hands is solid it becomes the warm-up, as a teacher would have it.
+  const later = buildPlan([...runs(first, 4, 40), ...runs('quarters-left', 4, 40), ...runs('singles', 4, 40)])
+  check('warm-up becomes alternating hands once she can do it',
+    later.steps[0].id === 'singles', later.steps[0].id)
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`)

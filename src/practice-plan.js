@@ -77,20 +77,40 @@ export function buildPlan (history) {
   // teaching order, so this walks her up it without ever skipping a step.
   const focus = EXERCISES.find((e) => !progress[e.id].solid) || EXERCISES[EXERCISES.length - 1]
 
-  // The finisher is the hardest thing she HAS made solid — the most satisfying thing she
-  // can currently play. Before anything is solid, the very first exercise serves.
   const solid = EXERCISES.filter((e) => progress[e.id].solid)
-  const finisher = solid.length ? solid[solid.length - 1] : EXERCISES[0]
 
-  // Warm-up never changes. Alternating hands, slow, every single day.
-  const warmUp = EXERCISES.find((e) => e.id === 'singles') || EXERCISES[0]
+  /*
+   * Warming up on alternating hands is the standard, but only once alternating hands is
+   * something she can do — otherwise the warm-up is HARDER than the thing she is
+   * learning, which is backwards. Until then the simplest motion there is serves.
+   */
+  const singles = EXERCISES.find((e) => e.id === 'singles')
+  const warmUp = singles && progress[singles.id].solid ? singles : EXERCISES[0]
+
+  /*
+   * The finisher is the hardest thing she has actually mastered — the most satisfying
+   * thing she can currently play, and a free helping of spaced repetition.
+   *
+   * A brand new drummer has no such thing, and inventing one just repeats the focus for
+   * a third time: three of four steps identical, which reads as a very boring plan. So
+   * the session is simply shorter until she has earned a favourite, and gains a step
+   * when she does. The plan growing with her is worth more than filling a slot.
+   */
+  /*
+   * Only the focus is excluded. The warm-up may double as the finisher: it runs short
+   * and deliberately slow at the start, and at her earned tempo at the end, which are
+   * different enough to be worth doing — and it means the reward slot arrives as soon
+   * as she has mastered anything at all, rather than waiting for a second thing.
+   */
+  const candidates = solid.filter((e) => e.id !== focus.id)
+  const finisher = candidates.length ? candidates[candidates.length - 1] : null
 
   const steps = [
     {
       kind: 'warmup',
       id: warmUp.id,
       bars: 6,
-      bpm: Math.max(TEMPO.min, TEMPO.default - 10),
+      bpm: Math.max(TEMPO.min, tempoFor(history, warmUp.id) - 10),
       label: 'Warm up',
     },
     {
@@ -107,14 +127,16 @@ export function buildPlan (history) {
       bpm: tempoFor(history, focus.id),
       label: 'Once more',
     },
-    {
+  ]
+  if (finisher) {
+    steps.push({
       kind: 'finisher',
       id: finisher.id,
       bars: 8,
       bpm: tempoFor(history, finisher.id),
       label: 'Favourite',
-    },
-  ]
+    })
+  }
 
   return {
     steps,

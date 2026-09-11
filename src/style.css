@@ -325,51 +325,39 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
   background: linear-gradient(180deg, transparent, #ffffff0d 70%);
   box-shadow: inset 0 0 0 2px #ffffff12;
 }
-/* The pad itself, sitting on the strike line, so the stick has something to land on. */
-.lane .pad {
-  position: absolute; left: 10%; right: 10%; height: 16px;
-  border-radius: 50%;
-  background: radial-gradient(ellipse at 50% 35%, #4a5f6b, #2b3a44);
-  box-shadow: 0 3px 0 #0006, inset 0 2px 4px #ffffff14;
-  transform: translateY(-50%);
+/*
+ * The target line: where a note is meant to land.
+ *
+ * It also carries the accuracy flash, which used to live on a drawn drum pad. The pad
+ * was scenery — the falling line and the line it lands on say everything, and one less
+ * object competing for her attention is worth more than the illustration.
+ */
+.lane .strike {
+  position: absolute; left: 4%; right: 4%; height: 6px; border-radius: 3px;
+  background: #ffffff4d;
   transition: background-color .05s ease, box-shadow .05s ease, transform .05s ease;
 }
+.lane .strike.hit { background: var(--hot); box-shadow: 0 0 20px #ffc857aa; }
+
 /*
- * How close the hit was, as a colour ramp on the pad.
+ * How close the hit was, as a colour ramp.
  *
  * Deliberately green -> gold -> amber rather than green -> red. Red/green is the
  * commonest colour-blindness axis, so a ramp built on it is unreadable to some people;
  * and a red flash reads as failure, which breaks the rule that the worst thing this app
- * ever says is "Almost!". The ramp also brightens and swells as accuracy improves, so
- * it survives being seen in greyscale — and it is never the only signal: the words, the
- * emoji and the dot on the lane all say the same thing.
+ * ever says is "Almost!". The line also swells as accuracy improves, so it survives
+ * being seen in greyscale — and it is never the only signal: the words, the emoji and
+ * the dot on the lane all say the same thing.
  */
-.lane .pad.lit {
-  transform: translateY(-50%) scale(var(--swell, 1.06));
-  background: radial-gradient(ellipse at 50% 35%, var(--flash), var(--flash));
-  box-shadow: 0 3px 0 #0006, 0 0 26px var(--flash);
+.lane .strike.lit {
+  transform: scaleY(var(--swell, 1.6));
+  background: var(--flash);
+  box-shadow: 0 0 26px var(--flash);
 }
-.lane .pad.k-perfect { --flash: #7cf59f; --swell: 1.22; }
-.lane .pad.k-great   { --flash: #ffd76a; --swell: 1.16; }
-.lane .pad.k-almost  { --flash: #f5a068; --swell: 1.10; }
-.lane .pad.k-off     { --flash: #c98f7a; --swell: 1.04; }
-.lane .notes { position: absolute; inset: 0; overflow: hidden; border-radius: 14px; }
-.note {
-  position: absolute; left: 8%; right: 8%; height: 14px;
-  border-radius: 8px;
-  background: var(--kraft);
-  box-shadow: 0 2px 0 #00000040;
-  will-change: transform;
-}
-.note.done { background: #ffffff2b; }
-
-/* Where the stick meets the pad. */
-.lane .strike {
-  position: absolute; left: 4%; right: 4%; height: 6px; border-radius: 3px;
-  background: #ffffff4d;
-  transition: background-color .08s ease, box-shadow .08s ease;
-}
-.lane .strike.hit { background: var(--hot); box-shadow: 0 0 20px #ffc857aa; }
+.lane .strike.k-perfect { --flash: #7cf59f; --swell: 2.6; }
+.lane .strike.k-great   { --flash: #ffd76a; --swell: 2.2; }
+.lane .strike.k-almost  { --flash: #f5a068; --swell: 1.8; }
+.lane .strike.k-off     { --flash: #c98f7a; --swell: 1.4; }
 
 .lane .handtag {
   position: absolute; left: 0; right: 0; bottom: .3rem;
@@ -415,6 +403,33 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 
 .streak { font-weight: 800; font-size: .95rem; color: var(--muted); }
 .streak b { color: var(--hot); font-size: 1.35rem; font-family: var(--font-display); }
+
+/* ------------------------------------------------------------ today */
+
+.streakline { margin: 0; color: var(--kraft); font-weight: 800; font-size: 1.05rem; }
+
+.plan {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: .45rem;
+  width: min(90vw, 26rem);
+}
+.plan li {
+  display: flex; align-items: center; gap: .7rem;
+  background: #ffffff12; border: 2px solid transparent;
+  border-radius: 14px; padding: .55rem .9rem; text-align: left;
+}
+.plan li .n {
+  width: 1.7rem; height: 1.7rem; flex: 0 0 auto; border-radius: 50%;
+  display: grid; place-items: center; font-weight: 900; font-size: .85rem;
+  background: #ffffff1f; color: var(--muted);
+}
+.plan li .what { font-weight: 800; font-size: .95rem; }
+.plan li .how { color: var(--muted); font-size: .78rem; }
+.plan li.done { opacity: .5; }
+.plan li.done .n { background: var(--ok); color: #0d3018; }
+.plan li.now { border-color: var(--hot); background: #ffffff1f; }
+
+.ex-step { color: var(--kraft); font-size: .8rem; font-weight: 800; margin-right: .4rem; }
 
 /* ------------------------------------------------------------- done */
 

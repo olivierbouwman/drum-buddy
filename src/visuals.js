@@ -24,13 +24,11 @@ export class Visuals {
       L: {
         notes: document.getElementById('notes-L'),
         strike: document.getElementById('strike-L'),
-        pad: document.getElementById('pad-L'),
         el: [],
       },
       R: {
         notes: document.getElementById('notes-R'),
         strike: document.getElementById('strike-R'),
-        pad: document.getElementById('pad-R'),
         el: [],
       },
     }
@@ -87,7 +85,6 @@ export class Visuals {
     for (const hand of ['L', 'R']) {
       const lane = this.lanes[hand]
       lane.strike.style.top = strikeY + 'px'
-      if (lane.pad) lane.pad.style.top = strikeY + 'px'
     }
 
     for (const n of this.notes) {
@@ -113,12 +110,12 @@ export class Visuals {
    */
   flashPad (hand, kind = 'great') {
     const lane = this.lanes[hand] || this.lanes.R
-    const pad = lane.pad
-    if (!pad) return
-    pad.classList.remove('k-perfect', 'k-great', 'k-almost', 'k-off')
-    pad.classList.add('lit', 'k-' + kind)
-    clearTimeout(lane.padTimer)
-    lane.padTimer = setTimeout(() => pad.classList.remove('lit'), 160)
+    const line = lane.strike
+    if (!line) return
+    line.classList.remove('k-perfect', 'k-great', 'k-almost', 'k-off')
+    line.classList.add('lit', 'k-' + kind)
+    clearTimeout(lane.flashTimer)
+    lane.flashTimer = setTimeout(() => line.classList.remove('lit'), 180)
   }
 
   showHand () { /* the lanes themselves carry this now */ }
