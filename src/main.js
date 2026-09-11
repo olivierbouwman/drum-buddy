@@ -37,6 +37,15 @@ const debug = params.has('debug') || params.has('selftest')
 // The pad sensor's delay is a property of the device, not of the day. Measured once on
 // something new, then left alone; see the note in runWarmup().
 const wantsCalibration = params.has('calibrate')
+/*
+ * Speaker test: can the accelerometer feel the tablet's own speaker?
+ *
+ * If it can, the gap between a click being scheduled and the case moving IS the output
+ * latency, measured directly on the device with no microphone and no human in the loop —
+ * which is the one reference that has been missing. Run it, put the tablet where she
+ * plays, and do not touch anything.
+ */
+const speakerTest = params.has('speakertest')
 const wantSelfTest = params.has('selftest')
 
 const engine = new AudioEngine()
@@ -213,8 +222,10 @@ async function setUpSensors () {
   if (motionOk) {
     motion.onLevel((v, mag) => {
       setMeter('motion', v)
-      if (diagnosticsActive && scheduler && scheduler.running && state.motionTrace.length < 6000) {
-        state.motionTrace.push([+engine.now.toFixed(3), +(mag || 0).toFixed(3)])
+      if ((diagnosticsActive || speakerTest) && scheduler && scheduler.running && state.motionTrace.length < 20000) {
+        // nowFine: the raw clock steps 85 ms at a time, which would smear the trace
+        // across the very interval any speaker-borne signal has to be found in.
+        state.motionTrace.push([+engine.nowFine.toFixed(4), +(mag || 0).toFixed(4)])
       }
     })
   } else {
@@ -1066,6 +1077,11 @@ function startExercise (index, step = null) {
 
   // The lanes need every note up front so they can fall into view ahead of time; the
   // scheduler works the whole exercise out when it starts.
+  // Speaker test: thump instead of tick, and say so on screen so a run cannot be
+  // mistaken for a practice.
+  scheduler.thumpMode = speakerTest
+  if (speakerTest) $('ex-name').textContent = 'SPEAKER TEST — do not play'
+
   visuals.beatS = beatS
   visuals.setup(ex, scheduler.noteQueue)
   visuals.start(() => engine.audibleNow())

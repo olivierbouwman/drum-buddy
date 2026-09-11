@@ -34,6 +34,7 @@ export class ClickSource {
     this.buffers.beat = this._tone(METRONOME.freqNormal)
     this.buffers.accent = this._tone(METRONOME.freqAccent)
     this.buffers.calib = this._noiseBurst()
+    this.buffers.thump = this._thump()
   }
 
   /** Hann-windowed sine. Sidelobes fall as f^-3, so nothing leaks into 3-10 kHz. */
@@ -44,6 +45,31 @@ export class ClickSource {
     for (let i = 0; i < n; i++) {
       const hann = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (n - 1)))
       d[i] = Math.sin((2 * Math.PI * freq * i) / this.ctx.sampleRate) * hann * METRONOME.peak
+    }
+    return buf
+  }
+
+  /**
+   * A click the ACCELEROMETER might feel, for measuring output latency without a mic.
+   *
+   * The metronome is a 30 ms tick at 900 Hz. An accelerometer sampling at 50 Hz cannot
+   * see 900 Hz at all — it can only feel the case being kicked, and a tick that quiet
+   * barely kicks it. So this is the opposite: 70 Hz, which physically moves the chassis
+   * far more per unit of loudness, held long enough for several accelerometer samples to
+   * land inside it, and routed around the metronome's gain ceiling.
+   *
+   * Only ever played under ?speakertest, never during a real practice.
+   */
+  _thump () {
+    const rate = this.ctx.sampleRate
+    const n = Math.round(rate * 0.06)
+    const buf = this.ctx.createBuffer(1, n, rate)
+    const d = buf.getChannelData(0)
+    for (let i = 0; i < n; i++) {
+      // Sharp attack, quick decay: the arrival time is what is being measured, so the
+      // envelope has to have an unambiguous front edge.
+      const env = Math.exp(-i / (rate * 0.012))
+      d[i] = Math.sin((2 * Math.PI * 70 * i) / rate) * env * 0.9
     }
     return buf
   }
@@ -107,7 +133,9 @@ export class ClickSource {
   playAt (kind, when) {
     const src = this.ctx.createBufferSource()
     src.buffer = this.buffers[kind]
-    src.connect(kind === 'calib' ? this.testGain : this.gain)
+    // calib and thump are measurement signals, not the metronome: they deliberately
+    // bypass the anti-distortion ceiling, because the whole point is to be heard.
+    src.connect(kind === 'calib' || kind === 'thump' ? this.testGain : this.gain)
     src.start(when)
     return src
   }

@@ -82,7 +82,7 @@ export class Scheduler {
       const beatInBar = (this.nextBeat - this.countIn) % this.exercise.beatsPerBar
       const accent = inCountIn ? true : beatInBar === 0
 
-      this.clicks.playAt(accent ? 'accent' : 'beat', t)
+      this.clicks.playAt(this.thumpMode ? 'thump' : (accent ? 'accent' : 'beat'), t)
       this._onClick({
         index: this.nextBeat,
         time: t,
