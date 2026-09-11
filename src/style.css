@@ -829,6 +829,8 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 }
 .tune-caption { font-size: .8rem; opacity: .7; }
 
+.tune-exit { display: flex; flex-direction: column; align-items: center; gap: .4rem; }
+
 /*
  * Nothing to soften under reduced motion: the pulse does not move, and a light coming on
  * and off is not motion. It is also the entire content of this screen — removing it would

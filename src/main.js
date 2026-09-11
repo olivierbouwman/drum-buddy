@@ -2089,7 +2089,7 @@ async function runTuner () {
    */
   const BEAT = 0.75                       // 80 bpm: often enough to judge, slow enough to hear each one
   let next = engine.now + 0.3
-  setInterval(() => {
+  const loop = setInterval(() => {
     const horizon = engine.now + SCHEDULER.lookaheadS
     while (next < horizon) {
       const beat = next
@@ -2122,6 +2122,22 @@ async function runTuner () {
       next += BEAT
     }
   }, 100)
+
+  /*
+   * A way out.
+   *
+   * The value is already saved — it is written on every press — so this is not a Save
+   * button, it is a door. Without one the only exit was killing the app, and on a device
+   * with no address bar that is also the only way to shed the ?tune in the URL.
+   *
+   * Reloading to the bare path rather than just switching screens: it drops the query,
+   * silences the metronome, and guarantees the next exercise picks the new offset up
+   * from storage rather than from whatever this session happened to be holding.
+   */
+  $('tune-done').addEventListener('click', () => {
+    clearInterval(loop)
+    location.href = location.pathname
+  })
 }
 
 // --------------------------------------------------------------- dancers
