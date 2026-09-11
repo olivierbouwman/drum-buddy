@@ -89,6 +89,17 @@ function toast (msg, ms = 3200) {
 
 $('btn-play').addEventListener('click', async () => {
   $('btn-play').disabled = true
+  /*
+   * Go full screen on the way in.
+   *
+   * A browser will not do this on its own — it needs a real gesture — but Play IS one,
+   * so it can ride along and she never sees a separate button. Awaited before anything
+   * else because the resize changes every layout measurement that follows.
+   *
+   * Launched from the home-screen icon this is already full screen and the call is a
+   * no-op; if the browser refuses, the app simply runs in a normal window.
+   */
+  await goFullscreen()
   try {
     await engine.start()
     clicks = new ClickSource(engine.ctx)
@@ -1242,10 +1253,20 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden && !$('screen-start').classList.contains('on')) keepAwake()
 })
 
+async function goFullscreen () {
+  if (document.fullscreenElement || installed) return
+  if (!document.documentElement.requestFullscreen) return
+  try {
+    await document.documentElement.requestFullscreen({ navigationUI: 'hide' })
+    // Let the resize settle before anything measures the viewport.
+    await sleep(150)
+  } catch { /* refused; the app is perfectly usable in a window */ }
+}
+
 /**
- * Full-screen toggle, for when it's opened as a normal browser tab rather than
- * installed. Hidden when it can't work (iOS Safari won't full-screen a document) or
- * when it's pointless (already installed and running full screen).
+ * Manual toggle, for getting back out or for a browser that refused the automatic
+ * request. Hidden when it can't work (iOS Safari won't full-screen a document) or when
+ * it's pointless (already installed and running full screen).
  */
 const canFullscreen = !!document.documentElement.requestFullscreen
 const installed = window.matchMedia('(display-mode: fullscreen)').matches ||
