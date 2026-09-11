@@ -1429,12 +1429,19 @@ document.addEventListener('visibilitychange', () => {
 })
 
 function goFullscreen () {
-  if (document.fullscreenElement || installed) return
-  if (!document.documentElement.requestFullscreen) return
-  // Not awaited by the caller: cosmetic, and nothing should block on it.
+  if (document.fullscreenElement) { fullscreenNote = 'already'; return }
+  if (installed) { fullscreenNote = 'installed'; return }
+  if (!document.documentElement.requestFullscreen) { fullscreenNote = 'unsupported'; return }
+  // Not awaited by the caller: cosmetic, and nothing should block on it. The reason for
+  // a refusal is recorded rather than swallowed — "it doesn't work" was reported with
+  // no way to see why.
+  fullscreenNote = 'requested'
   document.documentElement.requestFullscreen({ navigationUI: 'hide' })
-    .catch(() => { /* refused; the app is perfectly usable in a window */ })
+    .then(() => { fullscreenNote = 'granted' })
+    .catch((err) => { fullscreenNote = 'refused: ' + (err && err.name) })
 }
+
+let fullscreenNote = 'not tried'
 
 /**
  * Manual toggle, for getting back out or for a browser that refused the automatic
@@ -1454,9 +1461,12 @@ if (canFullscreen && !installed) {
   }
   btn.addEventListener('click', async () => {
     try {
-      if (document.fullscreenElement) await document.exitFullscreen()
-      else await document.documentElement.requestFullscreen({ navigationUI: 'hide' })
-    } catch { /* the browser said no; the button just does nothing */ }
+      if (document.fullscreenElement) { await document.exitFullscreen(); fullscreenNote = 'exited' }
+      else { await document.documentElement.requestFullscreen({ navigationUI: 'hide' }); fullscreenNote = 'granted' }
+    } catch (err) {
+      fullscreenNote = 'refused: ' + (err && err.name)
+      toast('This browser wouldn’t go full screen', 3000)
+    }
   })
   document.addEventListener('fullscreenchange', sync)
   sync()
@@ -1517,6 +1527,8 @@ function snapshot () {
       padDelayHistoryMs,
       outputLatencyMs: Math.round((engine.outputLatency || 0) * 1000),
       timestampTrusted: engine._timestampUsable,
+      fullscreen: fullscreenNote,
+      installedMode: installed,
       visualLagMs: engine.visualLagMs,
       trackLatencyMs: mic && mic.stream
         ? Math.round(((mic.stream.getAudioTracks()[0].getSettings() || {}).latency || 0) * 1000)

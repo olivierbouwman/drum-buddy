@@ -64,6 +64,11 @@ body {
 .screen {
   position: absolute; inset: 0;
   z-index: 2;                 /* above the snow layer, which is z-index 1 */
+  /* Nothing may ever be unreachable. Her tablet is 433 CSS pixels tall in landscape,
+     less than half what the layout was first built for, so a safety net matters more
+     than tidiness here. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: none;
   flex-direction: column; align-items: center; justify-content: center;
   gap: clamp(.6rem, 2vh, 1.4rem);
@@ -573,4 +578,68 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
   :root { --muted: #e4f1f6; --line: #6ba6bf; }
   #snow { display: none; }
   .meter i { background: #fff; }
+}
+
+/* ------------------------------------------ her tablet, measured */
+
+/*
+ * 1006 x 433 CSS pixels in landscape, taken from the device rather than guessed at
+ * (see the viewport block in the diagnostics). Everything above was written assuming
+ * roughly twice that height.
+ *
+ * Tight here on purpose: full screen hands back the browser chrome, and the 600px rules
+ * above then give things room to breathe again without any of this applying.
+ */
+@media (max-height: 500px) {
+  :root { --pad: .4rem; }
+  .screen {
+    gap: .22rem;
+    /* "safe" matters more than it looks: plain centring pushes overflow off BOTH ends,
+       and the top half then cannot be scrolled to at all. */
+    justify-content: safe center;
+  }
+
+  .big-title { font-size: 1.15rem; }
+  .logo { font-size: 1.9rem; }
+  .tagline, .fineprint, .ex-tip, .mascot { display: none; }
+
+  .plan { gap: .2rem; width: min(94vw, 32rem); }
+  .plan li { padding: .22rem .6rem; gap: .5rem; border-radius: 9px; }
+  .plan li .n { width: 1.15rem; height: 1.15rem; font-size: .62rem; }
+  .plan li .what { font-size: .76rem; }
+  .plan li .how { font-size: .64rem; }
+  .plan li br { display: none; }
+  .plan li .how::before { content: ' · '; }
+
+  .streakline { font-size: .74rem; gap: .15rem; }
+  .weekdots i { width: 1.05rem; height: 1.05rem; font-size: .5rem; border-width: 1px; }
+
+  .huge { font-size: .92rem; padding: .38em 1.1em; min-height: 38px; box-shadow: 0 4px 0 #b9852c; }
+  .huge.alt { box-shadow: 0 4px 0 #4f9c68; }
+  .ghost { padding: .25em .8em; font-size: .74rem; min-height: 34px; }
+  .row { gap: .5rem; }
+
+  .stars { font-size: 1.4rem; }
+  .badge { font-size: .95rem; }
+  .score-value { font-size: 1.8rem; }
+  .score-meta { font-size: .7rem; gap: .6rem; }
+  .score-spark { height: 16px; margin-top: .15rem; }
+  .scoreboard { font-size: .7rem; gap: .05rem .7rem; }
+
+  .verdict-lane { height: 1.8rem; }
+  .verdict { font-size: .95rem; }
+  .lane .handtag { font-size: .75rem; bottom: .05rem; }
+  .meters { gap: .12rem; }
+  .meter { height: 6px; }
+  .meter-row span { font-size: .7rem; }
+
+  .tap-target { width: 5.5rem; font-size: .95rem; }
+  .hit-dots span { width: .8rem; height: .8rem; }
+  .player-grid button { padding: .3rem .65rem; font-size: .74rem; }
+  .player-grid button .face { font-size: 1.5rem; }
+  .player-grid .sub { display: none; }
+  .avatar-grid { gap: .35rem; }
+  .avatar-grid button { font-size: 1.3rem; min-width: 2.3rem; min-height: 2.3rem; padding: .15em; }
+  .namefield input { font-size: 1rem; min-height: 38px; padding: .3em .8em; }
+  #st-log { min-height: 4rem; padding: .5rem .7rem; font-size: .7rem; }
 }
