@@ -438,8 +438,10 @@ async function measureMotionDelay () {
   if (!motion || !motion.available) return
   const dots = $('warmup-dots')
   dots.innerHTML = ''
-  for (let i = 0; i < 3; i++) dots.append(document.createElement('span'))
-  $('warmup-msg').textContent = 'Tap the screen 3 times 👆'
+  // Five rather than three: this median is the whole calibration, and three samples of
+  // a jittery sensor is not enough to trust one.
+  for (let i = 0; i < 5; i++) dots.append(document.createElement('span'))
+  $('warmup-msg').textContent = 'Tap the screen 5 times 👆'
 
   const taps = []
   const spikes = []
@@ -458,28 +460,36 @@ async function measureMotionDelay () {
   document.addEventListener('pointerdown', onTap)
 
   const started = engine.now
-  while (taps.length < 3 && engine.now - started < 12) await sleep(80)
+  while (taps.length < 5 && engine.now - started < 20) await sleep(80)
   await sleep(400)                       // let the last jolt arrive
   document.removeEventListener('pointerdown', onTap)
   offMotion()
 
-  // Pair each tap with the jolt that followed it.
+  /*
+   * Pair each tap with the first jolt that follows it, inside a window tight enough
+   * that a rebound from the previous tap cannot be mistaken for this one's.
+   */
   const deltas = []
   for (const t of taps) {
-    const after = spikes.filter((s) => s >= t - 0.05 && s <= t + 0.45)
-    if (after.length) deltas.push(Math.min(...after) - t)
+    const after = spikes.filter((sp) => sp >= t - 0.03 && sp <= t + 0.30).sort((a, b) => a - b)
+    if (after.length) deltas.push(after[0] - t)
   }
-  if (deltas.length >= 2) {
-    deltas.sort((a, b) => a - b)
-    const med = deltas[deltas.length >> 1]
+  tapDeltasMs = deltas.map((v) => Math.round(v * 1000))
+  if (deltas.length >= 3) {
+    const sorted = [...deltas].sort((a, b) => a - b)
+    const med = sorted[sorted.length >> 1]
     motionDelayS = Math.max(0, Math.min(0.4, med))
-    if (debug) console.log('[drum-buddy] pad sensor delay:', Math.round(motionDelayS * 1000), 'ms from', deltas.length, 'taps')
+    const mad = sorted.map((v) => Math.abs(v - med)).sort((a, b) => a - b)[sorted.length >> 1] * 1000
+    tapSpreadMs = Math.round(mad * 1.4826)
+    if (debug) console.log('[drum-buddy] pad delay', Math.round(motionDelayS * 1000), 'ms +/-', tapSpreadMs, 'from', tapDeltasMs)
   }
   applyMotionTiming()
   dots.innerHTML = ''
 }
 
 let motionDelayS = 0
+let tapDeltasMs = []
+let tapSpreadMs = null
 
 /**
  * Tell the timing model what to subtract from a pad hit: how late she HEARS the beat,
@@ -1138,6 +1148,8 @@ function snapshot () {
       micReceiving: mic ? mic.receiving : null,
       motionOffsetMs: input && input.motionOffsetS ? Math.round(input.motionOffsetS * 1000) : 0,
       motionDelayMs: Math.round(motionDelayS * 1000),
+      tapDeltasMs,
+      tapSpreadMs,
       outputLatencyMs: Math.round((engine.outputLatency || 0) * 1000),
       trackLatencyMs: mic && mic.stream
         ? Math.round(((mic.stream.getAudioTracks()[0].getSettings() || {}).latency || 0) * 1000)
