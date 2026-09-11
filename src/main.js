@@ -485,7 +485,7 @@ async function measureMotionDelay () {
     // jolt is a plausible-looking sample that should not be allowed to shift the result.
     const kept = sorted.filter((v) => Math.abs(v - med) <= Math.max(mad * 3, 0.03))
     const useMed = kept.length ? kept[kept.length >> 1] : med
-    motionDelayS = Math.max(0, Math.min(0.4, useMed))
+    motionDelayS = rememberPadDelay(Math.max(0, Math.min(0.4, useMed)))
     tapSpreadMs = Math.round(mad * 1.4826 * 1000)
     tapKept = kept.length
     if (debug) console.log('[drum-buddy] pad delay', Math.round(motionDelayS * 1000), 'ms +/-', tapSpreadMs, 'from', tapDeltasMs)
@@ -494,10 +494,46 @@ async function measureMotionDelay () {
   dots.innerHTML = ''
 }
 
+const PAD_DELAY_KEY = 'drum-practice.padDelay.v1'
 let motionDelayS = 0
 let tapDeltasMs = []
 let tapSpreadMs = null
 let tapKept = 0
+
+/**
+ * Fold today's tap measurement into what previous sessions found.
+ *
+ * Five taps is not many, and it showed: 214, 184, 134, 190 ms across four sessions, all
+ * measuring the same unchanging hardware, averaging about right but wobbling +/-50 ms.
+ * Left alone that means a good run today can score differently tomorrow for no reason
+ * she did anything to cause.
+ *
+ * The tablet and the pad do not change between sessions, so neither should this. A
+ * median across the last several keeps it steady while still letting a genuine change —
+ * a different stand, a different surface — work its way in after a few runs.
+ */
+function rememberPadDelay (measuredS) {
+  let history = []
+  try {
+    const raw = localStorage.getItem(PAD_DELAY_KEY)
+    if (raw) history = JSON.parse(raw).filter((v) => typeof v === 'number')
+  } catch { /* storage unavailable; today's measurement stands alone */ }
+
+  history.push(measuredS)
+  if (history.length > 7) history.shift()
+  try { localStorage.setItem(PAD_DELAY_KEY, JSON.stringify(history)) } catch {}
+
+  const sorted = [...history].sort((a, b) => a - b)
+  const median = sorted[sorted.length >> 1]
+  if (debug) {
+    console.log('[drum-buddy] pad delay: today', Math.round(measuredS * 1000),
+      'ms, using', Math.round(median * 1000), 'ms from', history.length, 'sessions')
+  }
+  padDelayHistoryMs = history.map((v) => Math.round(v * 1000))
+  return median
+}
+
+let padDelayHistoryMs = []
 
 /**
  * Tell the timing model what to subtract from a pad hit: how late she HEARS the beat,
@@ -1159,6 +1195,7 @@ function snapshot () {
       tapDeltasMs,
       tapSpreadMs,
       tapKept,
+      padDelayHistoryMs,
       outputLatencyMs: Math.round((engine.outputLatency || 0) * 1000),
       timestampTrusted: engine._timestampUsable,
       visualLagMs: engine.visualLagMs,
