@@ -99,7 +99,20 @@ function show (name) {
    * the same time.
    */
   const deco = $('dancers')
-  if (deco) deco.classList.toggle('off', name !== 'start')
+  if (deco) {
+    const leaving = name !== 'start'
+    deco.classList.toggle('off', leaving)
+    /*
+     * Clear the spawned ones on the way out.
+     *
+     * display:none stops CSS animations dead, so their animationend never fires and they
+     * would never remove themselves — a burst of drumming would sit frozen off-screen
+     * for the rest of the session, holding its slots against MAX_DANCERS, and still be
+     * hanging there when she came back. The ambient drums stay: they loop forever and
+     * are meant to.
+     */
+    if (leaving) clearSpawnedDancers()
+  }
   // Move focus somewhere sensible for keyboard and screen-reader users.
   const first = $('screen-' + name).querySelector('button:not(.ghost), button')
   if (first) first.focus({ preventScroll: true })
@@ -2259,53 +2272,117 @@ async function runTuner () {
 // Just the one drum. A mix of instruments read as clutter rather than as a kit, and the
 // screen has one job: press Play.
 const DANCERS = ['🥁']
+/*
+ * A hard ceiling on how many can exist at once.
+ *
+ * Drumming fast is meant to fill the screen — that is the whole point of it — but each
+ * one is an animating element on a tablet that is also about to run a metronome and a
+ * filterbank, and an unbounded list would keep growing for as long as the app is open.
+ * Spawned drums also expire on their own once they drift off the top, so in practice the
+ * count settles wherever her drumming rate balances against them leaving.
+ */
+const MAX_DANCERS = 140
 let dancers = []
 
-function makeDancers (count = 18) {
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-  const host = $('dancers')
-  if (!host) return
-  for (let i = 0; i < count; i++) {
-    const el = document.createElement('i')
-    // The glyph lives in a child so its bounce composes with the drift on the parent
-    // instead of overwriting it.
-    const glyph = document.createElement('span')
-    glyph.textContent = DANCERS[i % DANCERS.length]
-    el.append(glyph)
-    el.style.left = (Math.random() * 96).toFixed(1) + '%'
-    el.style.setProperty('--size', (16 + Math.random() * 20).toFixed(0) + 'px')
-    el.style.setProperty('--dim', (0.18 + Math.random() * 0.22).toFixed(2))
-    el.style.setProperty('--sway', (Math.random() * 90 - 45).toFixed(0) + 'px')
-    el.style.setProperty('--spin', (Math.random() * 60 - 30).toFixed(0) + 'deg')
+const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/** One drum. `ambient` ones loop forever and start mid-flight; spawned ones rise once. */
+function makeDancer (host, ambient) {
+  const el = document.createElement('i')
+  // The glyph lives in a child so its bounce composes with the drift on the parent
+  // instead of overwriting it.
+  const glyph = document.createElement('span')
+  glyph.textContent = DANCERS[0]
+  el.append(glyph)
+  el.style.left = (Math.random() * 96).toFixed(1) + '%'
+  el.style.setProperty('--size', (16 + Math.random() * 20).toFixed(0) + 'px')
+  el.style.setProperty('--dim', (0.18 + Math.random() * 0.22).toFixed(2))
+  el.style.setProperty('--sway', (Math.random() * 90 - 45).toFixed(0) + 'px')
+  el.style.setProperty('--spin', (Math.random() * 60 - 30).toFixed(0) + 'deg')
+
+  if (ambient) {
     el.style.animationDuration = (16 + Math.random() * 16).toFixed(1) + 's'
     el.style.animationDelay = (-Math.random() * 30).toFixed(1) + 's'
-    host.append(el)
-    dancers.push(el)
+  } else {
+    // Quicker than the ambient ones, so a burst of drumming clears and leaves room for
+    // the next burst rather than filling the screen once and staying full.
+    el.classList.add('spawned')
+    el.style.animationDuration = (9 + Math.random() * 7).toFixed(1) + 's'
+    /*
+     * e.target === el, because animationend BUBBLES.
+     *
+     * The bounce runs on the inner span, so without this check a drum that got shaken
+     * on its way up would be deleted the moment that 320 ms bounce finished — vanishing
+     * mid-screen, and most often on exactly the drums she just hit. Also why this is not
+     * { once: true }: the element runs two animations of its own, and the listener has
+     * to stay until one of ITS OWN ends.
+     */
+    el.addEventListener('animationend', (e) => {
+      if (e.target !== el) return
+      el.remove()
+      const i = dancers.indexOf(el)
+      if (i >= 0) dancers.splice(i, 1)
+    })
   }
+
+  host.append(el)
+  dancers.push(el)
+  return el
+}
+
+/** Drop every drum a hit created, keeping the ones that were always there. */
+function clearSpawnedDancers () {
+  dancers = dancers.filter((el) => {
+    if (!el.classList.contains('spawned')) return true
+    el.remove()
+    return false
+  })
+}
+
+function makeDancers (count = 14) {
+  if (reducedMotion()) return
+  const host = $('dancers')
+  if (!host) return
+  for (let i = 0; i < count; i++) makeDancer(host, true)
 }
 
 /*
- * Bounce a few of them.
+ * Every hit does two things: shakes the drums already up there, and sends one or two
+ * more up from the bottom.
  *
- * Rate-limited to five a second no matter how fast she drums. Partly so a drum roll
- * cannot turn the background into a strobe — nothing here may flash above 3 Hz — and
- * partly because restarting eighteen animations per hit is real work on a tablet that
- * is also running a metronome and a filterbank.
+ * The bounce is rate-limited to five a second — nothing here may flash above 3 Hz, and
+ * restarting a screenful of animations on every stroke is real work. Spawning is not
+ * limited, because that is the part she is playing WITH: drum fast and the screen fills.
+ * The onset detector's own refractory already caps hits at about eight a second, and
+ * MAX_DANCERS catches the rest.
  */
 let lastPop = 0
 function popDancers () {
-  if (!dancers.length) return
+  if (reducedMotion()) return
+  const host = $('dancers')
+  if (!host) return
+
   const now = performance.now()
-  if (now - lastPop < 200) return
-  lastPop = now
-  for (let n = 0; n < 4; n++) {
-    const el = dancers[(Math.random() * dancers.length) | 0]
-    if (el.classList.contains('hit')) continue
-    el.classList.add('hit')
-    // Cleared on the animation's own event rather than a matching timeout, so the two
-    // can never drift apart and leave a dancer permanently mid-bounce.
-    el.addEventListener('animationend', () => el.classList.remove('hit'), { once: true })
+  if (now - lastPop >= 200) {
+    lastPop = now
+    for (let n = 0; n < 4 && dancers.length; n++) {
+      const el = dancers[(Math.random() * dancers.length) | 0]
+      if (el.classList.contains('hit')) continue
+      el.classList.add('hit')
+      // Cleared on the animation's own event rather than a matching timeout, so the two
+      // can never drift apart and leave a drum permanently mid-bounce.
+      // The bounce is on the child, so wait for the child's own event; the parent's
+      // drift animation ending is a different thing entirely.
+      el.addEventListener('animationend', (e) => {
+        if (e.target === el) return
+        el.classList.remove('hit')
+      }, { once: true })
+    }
   }
+
+  const room = MAX_DANCERS - dancers.length
+  const wanted = 1 + (Math.random() < 0.5 ? 1 : 0)
+  for (let n = 0; n < Math.min(wanted, room); n++) makeDancer(host, false)
 }
 
 makeDancers()

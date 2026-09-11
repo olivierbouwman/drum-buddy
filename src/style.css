@@ -573,6 +573,25 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 }
 
 /*
+ * Spawned by a drum hit rather than there from the start.
+ *
+ * One pass only, so each removes itself on animationend once it has drifted off the top
+ * — without that the list would grow for as long as the app is open. They also arrive at
+ * full brightness and fade as they climb, which makes a burst of drumming read as
+ * something she did rather than as more background.
+ */
+#dancers i.spawned {
+  animation-iteration-count: 1;
+  animation-name: float-up, spawn-fade;
+  animation-timing-function: linear, ease-in;
+}
+@keyframes spawn-fade {
+  0%   { opacity: 0; }
+  6%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/*
  * The bounce. A short scale-and-lift on the emoji's inner span, so it composes with the
  * drifting transform on the parent instead of fighting it.
  */
