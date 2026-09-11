@@ -77,7 +77,7 @@ export class MotionInput extends InputSource {
     const now = this.engine.now
     const threshold = this.rest * MOTION.spikeOverRest
     // 1.0 means "just triggered", so the meter reads as a fraction of the bar.
-    this._onLevel(mag / (threshold || 1))
+    this._onLevel(mag / (threshold || 1), mag)
 
     if (mag > threshold) {
       if (mag > this.peak) { this.peak = mag; this.peakAt = now }

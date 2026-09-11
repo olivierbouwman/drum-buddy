@@ -21,6 +21,19 @@ class DrumOnsetProcessor extends AudioWorkletProcessor {
     this.listening = true
     this.probing = true
 
+    /*
+     * A rolling window of raw audio, so a real practice session can be pulled off the
+     * device and replayed through the detector offline. Tuning against a recording made
+     * once, in a quiet room, on purpose, is not the same as tuning against the room she
+     * actually plays in.
+     */
+    this.recSeconds = o.recordSeconds || 0
+    if (this.recSeconds > 0) {
+      this.rec = new Float32Array(Math.round(sampleRate * this.recSeconds))
+      this.recPos = 0
+      this.recWrapped = false
+    }
+
     this.meterPeak = 0
     this.meterCount = 0
     this.meterEvery = Math.round(sampleRate / 20)   // 20 updates a second
@@ -30,7 +43,9 @@ class DrumOnsetProcessor extends AudioWorkletProcessor {
       if (m.type === 'refractory') this.det.setRefractoryMs(m.ms)
       else if (m.type === 'listen') this.listening = m.on
       else if (m.type === 'probe') this.probing = m.on
-      else if (m.type === 'tune') {
+      else if (m.type === 'dump') {
+        this._dump()
+      } else if (m.type === 'tune') {
         // The app has learned which bands separate her drum from the bleed on this
         // device. Applied live; it changes only WHETHER a hit is seen, not when.
         if (m.mask) this.det.setEnabledBands(m.mask)
@@ -38,6 +53,24 @@ class DrumOnsetProcessor extends AudioWorkletProcessor {
       }
     }
     this.port.postMessage({ type: 'ready', sampleRate })
+  }
+
+  /** Hand the recorded window to the main thread, oldest sample first. */
+  _dump () {
+    if (!this.rec) return this.port.postMessage({ type: 'audio', empty: true })
+    const n = this.recWrapped ? this.rec.length : this.recPos
+    const out = new Float32Array(n)
+    if (this.recWrapped) {
+      const tail = this.rec.length - this.recPos
+      out.set(this.rec.subarray(this.recPos), 0)
+      out.set(this.rec.subarray(0, this.recPos), tail)
+    } else {
+      out.set(this.rec.subarray(0, n))
+    }
+    // The frame the FIRST returned sample was captured at, so it can be lined up
+    // against the beat grid later.
+    const startFrame = currentFrame - n
+    this.port.postMessage({ type: 'audio', startFrame, sampleRate, pcm: out }, [out.buffer])
   }
 
   process (inputs) {
@@ -74,6 +107,13 @@ class DrumOnsetProcessor extends AudioWorkletProcessor {
       }
     }
 
+    if (this.rec) {
+      for (let i = 0; i < ch.length; i++) {
+        this.rec[this.recPos] = ch[i]
+        if (++this.recPos >= this.rec.length) { this.recPos = 0; this.recWrapped = true }
+      }
+    }
+
     for (let i = 0; i < ch.length; i++) {
       const a = Math.abs(ch[i])
       if (a > this.meterPeak) this.meterPeak = a
@@ -88,7 +128,20 @@ class DrumOnsetProcessor extends AudioWorkletProcessor {
         peak: this.meterPeak,
         levels: this.det.snapshot(),
       })
-      this.meterPeak = 0
+      /*
+     * A rolling window of raw audio, so a real practice session can be pulled off the
+     * device and replayed through the detector offline. Tuning against a recording made
+     * once, in a quiet room, on purpose, is not the same as tuning against the room she
+     * actually plays in.
+     */
+    this.recSeconds = o.recordSeconds || 0
+    if (this.recSeconds > 0) {
+      this.rec = new Float32Array(Math.round(sampleRate * this.recSeconds))
+      this.recPos = 0
+      this.recWrapped = false
+    }
+
+    this.meterPeak = 0
       this.meterCount = 0
     }
 

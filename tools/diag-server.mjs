@@ -39,6 +39,43 @@ export function diagServer (dir = 'tools/diag') {
     name: 'drum-buddy-diag',
     configureServer (server) {
       mkdirSync(dir, { recursive: true })
+      /*
+       * Whole-session uploads: the beat grid, every detection with its features, the
+       * accelerometer trace, and the raw audio of the take. This is what makes it
+       * possible to re-run the detector offline against the room she actually plays in,
+       * rather than against a recording made once, on purpose, in a quiet room.
+       */
+      server.middlewares.use('/diag-session', (req, res) => {
+        if (req.method !== 'POST') { res.statusCode = 405; return res.end() }
+        let body = ''
+        req.on('data', (c) => { body += c; if (body.length > 3e7) req.destroy() })
+        req.on('end', () => {
+          try {
+            const d = JSON.parse(body)
+            writeFileSync(join(dir, `session-${d.id}.json`), JSON.stringify(d, null, 2))
+            console.log(`[diag] session ${d.id}: ${(d.detections || []).length} detections, ` +
+              `${(d.notes || []).length} notes, ${(d.motion || []).length} motion samples`)
+          } catch (err) { console.warn('[diag] bad session:', err.message) }
+          res.statusCode = 204
+          res.end()
+        })
+      })
+
+      server.middlewares.use('/diag-audio', (req, res) => {
+        if (req.method !== 'POST') { res.statusCode = 405; return res.end() }
+        const id = new URL(req.url, 'http://x').searchParams.get('id') || Date.now()
+        const chunks = []
+        let size = 0
+        req.on('data', (c) => { chunks.push(c); size += c.length; if (size > 6e7) req.destroy() })
+        req.on('end', () => {
+          const file = join(dir, `session-${id}.wav`)
+          writeFileSync(file, Buffer.concat(chunks))
+          console.log(`[diag] audio for ${id}: ${(size / 1e6).toFixed(1)} MB -> ${file}`)
+          res.statusCode = 204
+          res.end()
+        })
+      })
+
       server.middlewares.use('/diag', (req, res) => {
         if (req.method !== 'POST') {
           res.statusCode = 405

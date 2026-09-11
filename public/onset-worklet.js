@@ -328,6 +328,12 @@ var DrumOnsetProcessor = class extends AudioWorkletProcessor {
 		this.probe = new ClickProbe(sampleRate, o.click || {});
 		this.listening = true;
 		this.probing = true;
+		this.recSeconds = o.recordSeconds || 0;
+		if (this.recSeconds > 0) {
+			this.rec = new Float32Array(Math.round(sampleRate * this.recSeconds));
+			this.recPos = 0;
+			this.recWrapped = false;
+		}
 		this.meterPeak = 0;
 		this.meterCount = 0;
 		this.meterEvery = Math.round(sampleRate / 20);
@@ -336,6 +342,7 @@ var DrumOnsetProcessor = class extends AudioWorkletProcessor {
 			if (m.type === "refractory") this.det.setRefractoryMs(m.ms);
 			else if (m.type === "listen") this.listening = m.on;
 			else if (m.type === "probe") this.probing = m.on;
+			else if (m.type === "dump") this._dump();
 			else if (m.type === "tune") {
 				if (m.mask) this.det.setEnabledBands(m.mask);
 				if (typeof m.minLevel === "number") this.det.setMinLevel(m.minLevel);
@@ -345,6 +352,27 @@ var DrumOnsetProcessor = class extends AudioWorkletProcessor {
 			type: "ready",
 			sampleRate
 		});
+	}
+	/** Hand the recorded window to the main thread, oldest sample first. */
+	_dump() {
+		if (!this.rec) return this.port.postMessage({
+			type: "audio",
+			empty: true
+		});
+		const n = this.recWrapped ? this.rec.length : this.recPos;
+		const out = new Float32Array(n);
+		if (this.recWrapped) {
+			const tail = this.rec.length - this.recPos;
+			out.set(this.rec.subarray(this.recPos), 0);
+			out.set(this.rec.subarray(0, this.recPos), tail);
+		} else out.set(this.rec.subarray(0, n));
+		const startFrame = currentFrame - n;
+		this.port.postMessage({
+			type: "audio",
+			startFrame,
+			sampleRate,
+			pcm: out
+		}, [out.buffer]);
 	}
 	process(inputs) {
 		const input = inputs[0];
@@ -370,6 +398,13 @@ var DrumOnsetProcessor = class extends AudioWorkletProcessor {
 				levels: this.det.snapshot()
 			});
 		}
+		if (this.rec) for (let i = 0; i < ch.length; i++) {
+			this.rec[this.recPos] = ch[i];
+			if (++this.recPos >= this.rec.length) {
+				this.recPos = 0;
+				this.recWrapped = true;
+			}
+		}
 		for (let i = 0; i < ch.length; i++) {
 			const a = Math.abs(ch[i]);
 			if (a > this.meterPeak) this.meterPeak = a;
@@ -381,6 +416,12 @@ var DrumOnsetProcessor = class extends AudioWorkletProcessor {
 				peak: this.meterPeak,
 				levels: this.det.snapshot()
 			});
+			this.recSeconds = o.recordSeconds || 0;
+			if (this.recSeconds > 0) {
+				this.rec = new Float32Array(Math.round(sampleRate * this.recSeconds));
+				this.recPos = 0;
+				this.recWrapped = false;
+			}
 			this.meterPeak = 0;
 			this.meterCount = 0;
 		}

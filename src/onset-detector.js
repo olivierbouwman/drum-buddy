@@ -10,9 +10,11 @@ import { DETECTOR } from './config.js'
 import { InputSource } from './input-sources.js'
 
 export class MicInput extends InputSource {
-  constructor (engine) {
+  constructor (engine, { recordSeconds = 0 } = {}) {
     super('mic')
     this.engine = engine
+    this.recordSeconds = recordSeconds
+    this._onAudio = null
     this.stream = null
     this.node = null
     this.error = null
@@ -61,7 +63,7 @@ export class MicInput extends InputSource {
 
     this.source = ctx.createMediaStreamSource(this.stream)
     this.node = new AudioWorkletNode(ctx, 'drum-onset', {
-      processorOptions: { detector: DETECTOR, click: {} },
+      processorOptions: { detector: DETECTOR, click: {}, recordSeconds: this.recordSeconds },
     })
 
     // A worklet with nothing downstream may never be pulled, so route it to the
@@ -78,6 +80,8 @@ export class MicInput extends InputSource {
         this.emit({ time: m.time, strength: m.strength, levels: m.levels, source: 'mic' })
       } else if (m.type === 'click') {
         this._onClick(m.time, m.level, m.levels)
+      } else if (m.type === 'audio') {
+        if (this._onAudio) { this._onAudio(m); this._onAudio = null }
       } else if (m.type === 'level') {
         this.level = m.peak
         this._onLevel(m.peak, m.levels)
@@ -86,6 +90,19 @@ export class MicInput extends InputSource {
 
     this.available = true
     return true
+  }
+
+  /**
+   * Ask for the rolling window of raw audio.
+   * @returns {Promise<{pcm:Float32Array,startFrame:number,sampleRate:number}|null>}
+   */
+  dumpAudio (timeoutMs = 4000) {
+    if (!this.node || !this.recordSeconds) return Promise.resolve(null)
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => { this._onAudio = null; resolve(null) }, timeoutMs)
+      this._onAudio = (m) => { clearTimeout(timer); resolve(m.empty ? null : m) }
+      this.node.port.postMessage({ type: 'dump' })
+    })
   }
 
   /** Apply what the app has learned about this device's bands and levels. */

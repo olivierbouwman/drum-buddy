@@ -23,7 +23,7 @@ import { TimingModel } from './timing-model.js'
 import { probeOffsetSeconds, refractoryForSpacing } from './dsp-core.js'
 import { AutoTune } from './auto-tune.js'
 import { SelfTest } from './selftest.js'
-import { startDiagnostics } from './diagnostics.js'
+import { startDiagnostics, sendSession, wavFromFloat, diagnosticsActive } from './diagnostics.js'
 import { LiveScorer, summarise, scoreFor, notesPerMinute } from './scoring.js'
 import * as history from './history.js'
 import { assess } from './level-coach.js'
@@ -59,6 +59,10 @@ const state = {
   lastStats: null,
   /** How hard she actually hits, so room noise can be told apart from a real strike. */
   hitStrengths: [],
+  /** Every detection this exercise, with its features — for offline replay. */
+  detections: [],
+  /** The accelerometer trace, so the two sensors can be compared after the fact. */
+  motionTrace: [],
 }
 
 // ------------------------------------------------------------------ screens
@@ -121,7 +125,9 @@ $('btn-play').addEventListener('click', async () => {
 async function setUpSensors () {
   $('warmup-msg').textContent = 'Listening for your drum…'
 
-  mic = new MicInput(engine)
+  // A rolling window of raw audio, kept only when a developer machine is serving the
+  // page. The published app never records anything.
+  mic = new MicInput(engine, { recordSeconds: diagnosticsActive ? 45 : 0 })
   motion = new MotionInput(engine)
 
   const [micOk, motionOk] = await Promise.all([
@@ -156,7 +162,12 @@ async function setUpSensors () {
   }
 
   if (motionOk) {
-    motion.onLevel((v) => setMeter('motion', v))
+    motion.onLevel((v, mag) => {
+      setMeter('motion', v)
+      if (diagnosticsActive && scheduler && scheduler.running && state.motionTrace.length < 6000) {
+        state.motionTrace.push([+engine.now.toFixed(3), +(mag || 0).toFixed(3)])
+      }
+    })
   } else {
     for (const id of ['warmup-motion-row', 'play-motion-row']) {
       const el = $(id)
@@ -388,6 +399,8 @@ function startExercise (index) {
   state.exerciseIndex = index
   state.hits = []
   state.notes = []
+  state.detections = []
+  state.motionTrace = []
 
   show('play')
   $('ex-name').textContent = ex.name
@@ -438,6 +451,16 @@ function startExercise (index) {
     const corrected = { ...hit, time: timing.correct(hit.time) }
     state.hits.push(corrected)
     lastHitAt = hit.time
+    if (diagnosticsActive) {
+      state.detections.push({
+        t: +hit.time.toFixed(4),
+        strength: hit.strength,
+        bands: hit.bands,
+        levels: hit.levels ? hit.levels.map((v) => +v.toFixed(6)) : null,
+        source: hit.source,
+        corroborated: !!hit.corroborated,
+      })
+    }
     if (typeof hit.strength === 'number') {
       state.hitStrengths.push(hit.strength)
       if (state.hitStrengths.length > 120) state.hitStrengths.shift()
@@ -562,6 +585,7 @@ function finishExercise () {
   stopPlay()
   storeLatency()
   applyAutoTune()
+  uploadSession()
   state.scorer.finish()
   const beatS = 60 / state.bpm
   const stats = summarise(state.notes, state.hits, beatS)
@@ -629,6 +653,46 @@ function finishExercise () {
   $('done-badge').setAttribute('role', 'status')
 
   armDrumToContinue()
+}
+
+/**
+ * Send the whole take to the developer machine: the beat grid, every detection with its
+ * features, the accelerometer trace, and the raw audio.
+ *
+ * Only ever when that machine is the one serving the page. This exists because
+ * aggregates were not enough — they said detection "looked poor" without saying why,
+ * and every conclusion drawn from them needed correcting afterwards.
+ */
+async function uploadSession () {
+  if (!diagnosticsActive) return
+  const id = new Date().toISOString().replace(/[:.]/g, '-')
+  let wav = null
+  let audioStartFrame = null
+  try {
+    const dump = mic ? await mic.dumpAudio() : null
+    if (dump) {
+      wav = wavFromFloat(dump.pcm, dump.sampleRate)
+      audioStartFrame = dump.startFrame
+    }
+  } catch { /* recording is a nicety, not a requirement */ }
+
+  sendSession({
+    id,
+    exercise: EXERCISES[state.exerciseIndex]?.id,
+    bpm: state.bpm,
+    sampleRate: engine.sampleRate,
+    latencyMs: timing.latencyMs,
+    latencySpreadMs: timing.spreadMs,
+    latencyApproximate: !!timing.approximate,
+    // Everything below shares the AudioContext clock, so it can all be lined up.
+    audioStartFrame,
+    notes: state.notes.map((n) => ({ t: +n.time.toFixed(4), hand: n.hand })),
+    detections: state.detections,
+    motion: state.motionTrace,
+    stats: state.lastStats,
+    tuning: autoTune ? autoTune.report : null,
+    snapshot: snapshot(),
+  }, wav)
 }
 
 /**
