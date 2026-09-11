@@ -1683,7 +1683,11 @@ function setLevel (l, { announce } = {}) {
   level = l
   applyLevel(level)
   try {
-    if (autoLevel) localStorage.setItem(LEVEL_STORAGE_KEY + '.auto', l.id)
+    // players.key, to match the read in loadLevel(). Without it this wrote to
+    // 'drum-buddy:level.auto' while loadLevel read 'drum-buddy:level.auto:<player>', so
+    // the level she had earned was saved somewhere nothing ever looked — and the whole
+    // automatic difficulty reset to the easiest setting every single session.
+    if (autoLevel) localStorage.setItem(players.key(LEVEL_STORAGE_KEY + '.auto'), l.id)
   } catch {}
   renderLevels()
   if (announce) toast(announce, 4500)
@@ -1722,7 +1726,8 @@ function renderLevels () {
   auto.setAttribute('aria-pressed', String(autoLevel))
   auto.addEventListener('click', () => {
     autoLevel = true
-    try { localStorage.setItem(LEVEL_STORAGE_KEY, 'auto') } catch {}
+    // Same mismatch: written unscoped, read scoped, so choosing Auto never stuck.
+    try { localStorage.setItem(players.key(LEVEL_STORAGE_KEY), 'auto') } catch {}
     renderLevels()
     toast('I’ll pick the level as you improve', 2500)
   })
