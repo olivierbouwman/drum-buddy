@@ -437,43 +437,49 @@ function watchForDeafness (peak) {
 async function measureMotionDelay () {
   if (!motion || !motion.available) return
   const dots = $('warmup-dots')
+  const target = $('tap-target')
+  const label = $('tap-target-label')
   dots.innerHTML = ''
-  // Five rather than three: this median is the whole calibration, and three samples of
-  // a jittery sensor is not enough to trust one.
-  for (let i = 0; i < 5; i++) dots.append(document.createElement('span'))
-  $('warmup-msg').textContent = 'Tap the screen firmly 5 times 👆'
+  const TAPS = 5
+  for (let i = 0; i < TAPS; i++) dots.append(document.createElement('span'))
+  $('warmup-msg').textContent = 'Tap the circle — firmly!'
 
   motion.setSensitive(true)
   const taps = []
   const spikes = []
-  const onTap = (e) => {
-    if (e.target.closest('button')) return
-    const offset = engine.clockOffset
-    const t = offset === null ? engine.now : (e.timeStamp - offset) / 1000
-    taps.push(t)
-    if (dots.children[taps.length - 1]) dots.children[taps.length - 1].classList.add('got')
-  }
-  // Onset, not peak: a finger tap peaks well after it lands, and timing it by the peak
-  // measured the pad's delay 88 ms too high. A stick peaks on the sample it arrives.
   const offMotion = onHits((hit) => {
     if (hit.source === 'motion') spikes.push(hit.onsetTime ?? hit.time)
   })
-  document.addEventListener('pointerdown', onTap)
 
-  const started = engine.now
-  while (taps.length < 5 && engine.now - started < 20) await sleep(80)
-  await sleep(400)                       // let the last jolt arrive
-  document.removeEventListener('pointerdown', onTap)
+  target.hidden = false
+  for (let i = 0; i < TAPS; i++) {
+    label.textContent = `${i + 1} / ${TAPS}`
+    target.disabled = false
+    const t = await waitForTap(target)
+    if (t === null) break
+    taps.push(t)
+    dots.children[i].classList.add('got')
+    target.disabled = true
+    // A clear gap before the next one, so a faint jolt can never be attributed to the
+    // tap that follows it.
+    await sleep(700)
+  }
+  target.hidden = true
+  await sleep(300)                        // let the last jolt arrive
   offMotion()
   motion.setSensitive(false)
 
   /*
-   * Pair each tap with the first jolt that follows it, inside a window tight enough
-   * that a rebound from the previous tap cannot be mistaken for this one's.
+   * Pair each tap with the first jolt that follows it — and only if that jolt is
+   * comfortably before the next tap, so a mis-pairing cannot masquerade as a delay.
    */
   const deltas = []
-  for (const t of taps) {
-    const after = spikes.filter((sp) => sp >= t - 0.03 && sp <= t + 0.30).sort((a, b) => a - b)
+  for (let i = 0; i < taps.length; i++) {
+    const t = taps[i]
+    const nextTap = taps[i + 1] ?? Infinity
+    const after = spikes
+      .filter((sp) => sp >= t - 0.03 && sp <= Math.min(t + 0.30, nextTap - 0.1))
+      .sort((a, b) => a - b)
     if (after.length) deltas.push(after[0] - t)
   }
   tapDeltasMs = deltas.map((v) => Math.round(v * 1000))
@@ -481,20 +487,32 @@ async function measureMotionDelay () {
     const sorted = [...deltas].sort((a, b) => a - b)
     const med = sorted[sorted.length >> 1]
     const mad = sorted.map((v) => Math.abs(v - med)).sort((a, b) => a - b)[sorted.length >> 1]
-    // Drop anything wildly out of line before averaging: a tap paired with the wrong
-    // jolt is a plausible-looking sample that should not be allowed to shift the result.
     const kept = sorted.filter((v) => Math.abs(v - med) <= Math.max(mad * 3, 0.03))
     const useMed = kept.length ? kept[kept.length >> 1] : med
     motionDelayS = rememberPadDelay(Math.max(0, Math.min(0.4, useMed)))
     tapSpreadMs = Math.round(mad * 1.4826 * 1000)
     tapKept = kept.length
-    if (debug) console.log('[drum-buddy] pad delay', Math.round(motionDelayS * 1000), 'ms +/-', tapSpreadMs, 'from', tapDeltasMs)
+  } else if (debug) {
+    console.warn('[drum-buddy] only', deltas.length, 'usable taps; keeping the stored delay')
   }
   applyMotionTiming()
   dots.innerHTML = ''
 }
 
-const PAD_DELAY_KEY = 'drum-practice.padDelay.v1'
+/** One tap on the target, or null if she gives up waiting. */
+function waitForTap (target) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { target.onpointerdown = null; resolve(null) }, 15000)
+    target.onpointerdown = (e) => {
+      clearTimeout(timer)
+      target.onpointerdown = null
+      const offset = engine.clockOffset
+      // The event's own timestamp, not the clock read when the handler happens to run.
+      resolve(offset === null ? engine.now : (e.timeStamp - offset) / 1000)
+    }
+  })
+}
+
 let motionDelayS = 0
 let tapDeltasMs = []
 let tapSpreadMs = null

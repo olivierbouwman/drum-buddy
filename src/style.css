@@ -124,6 +124,26 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
     radial-gradient(38% 50% at 82% -6%, #8ad8f21f, transparent 70%);
 }
 
+/* ------------------------------------------------- tap calibration */
+
+/*
+ * A single, paced target rather than "tap five times".
+ *
+ * Unpaced, taps landed close enough together that a tap whose own jolt was too faint to
+ * register could be paired with the NEXT tap's jolt — giving a number that was really
+ * just the tapping interval. One target at a time makes that impossible.
+ */
+.tap-target {
+  width: clamp(7rem, 26vw, 11rem); aspect-ratio: 1; border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #ffe0a3, var(--hot) 55%, #d99a2c);
+  color: #3a2708; font-weight: 900; font-size: clamp(1.1rem, 4vw, 1.6rem);
+  box-shadow: 0 10px 0 #b9852c, 0 18px 34px #0008;
+  animation: tapPulse 1.1s ease-in-out infinite;
+}
+.tap-target:active { transform: translateY(6px) scale(.97); box-shadow: 0 4px 0 #b9852c; }
+.tap-target[disabled] { animation: none; opacity: .35; box-shadow: none; }
+@keyframes tapPulse { 50% { transform: scale(1.06); } }
+
 /* ------------------------------------------------------- difficulty */
 
 .levels { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; justify-content: center; }
@@ -158,7 +178,7 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 .big-title { font-family: var(--font-display); font-size: clamp(1.6rem, 6.5vw, 2.6rem); margin: 0; }
 .instruction { font-size: clamp(1rem, 3.6vw, 1.35rem); color: var(--ink); margin: .2rem 0; }
 
-.hit-dots { display: flex; gap: .6rem; }
+.hit-dots { display: flex; gap: .6rem; margin-top: .4rem; }
 .hit-dots span {
   width: 1.1rem; height: 1.1rem; border-radius: 50%;
   background: #ffffff26; border: 2px solid var(--line);
