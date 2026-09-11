@@ -458,6 +458,7 @@ let deafnessHandled = false
 let micSilentSince = 0
 let reacquiring = false
 let micSilenceReported = false
+let micAttempts = 0
 
 async function watchForSilentMic () {
   if (!mic || !mic.available || reacquiring) return
@@ -465,6 +466,18 @@ async function watchForSilentMic () {
   if (mic.receiving) { micSilentSince = 0; return }
   if (!micSilentSince) { micSilentSince = now; return }
   if (now - micSilentSince < 2500) return
+
+  /*
+   * Give up after a couple of attempts.
+   *
+   * Retrying every few seconds tore down a stream and opened another over and over,
+   * walked the constraint ladder off its end and left the session with no microphone at
+   * all. The retry destroyed the thing it was retrying. Two goes, then leave it be: the
+   * pad sensor is what scores her playing, and a microphone that will not deliver is a
+   * lost calibration, not a lost session.
+   */
+  if (micAttempts >= 2) return
+  micAttempts++
 
   reacquiring = true
   micSilentSince = 0
@@ -486,7 +499,7 @@ async function watchForSilentMic () {
     }, 2500)
   }
   if (debug) console.warn('[drum-buddy] microphone delivered nothing; re-acquired:', ok)
-  setTimeout(() => { reacquiring = false }, 3000)
+  setTimeout(() => { reacquiring = false }, 8000)
   // Even if that fails she keeps playing: the pad sensor picks the exercise up.
   if (!ok && motion && motion.available) toast('Using the pad sensor', 2500)
 }
@@ -1612,8 +1625,38 @@ function goFullscreen () {
   setTimeout(() => {
     if (fullscreenNote === 'requested') {
       fullscreenNote = document.fullscreenElement ? 'granted (silent)' : 'ignored'
+      if (!document.fullscreenElement) armFullscreenRetry()
     }
   }, 1200)
+}
+
+/**
+ * Try again on the next touch anywhere.
+ *
+ * On the real tablet the request from the Play button neither resolves nor rejects — the
+ * browser simply drops it, which it does when a permission prompt is in flight, and the
+ * microphone is being asked for at that exact moment. A later tap is an unambiguous
+ * fresh gesture with nothing else competing for it. One shot, then it stops asking.
+ */
+let retryArmed = false
+function armFullscreenRetry () {
+  if (retryArmed || installed) return
+  retryArmed = true
+  const go = () => {
+    document.removeEventListener('pointerdown', go)
+    if (document.fullscreenElement) return
+    try {
+      const r = document.documentElement.requestFullscreen()
+      fullscreenNote = 'retried'
+      if (r && r.then) {
+        r.then(() => { fullscreenNote = 'granted (retry)' })
+          .catch((err) => { fullscreenNote = 'retry refused: ' + (err && err.name) })
+      }
+    } catch (err) {
+      fullscreenNote = 'retry threw: ' + (err && err.name)
+    }
+  }
+  document.addEventListener('pointerdown', go)
 }
 
 let fullscreenNote = 'not tried'

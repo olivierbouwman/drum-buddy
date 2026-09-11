@@ -31,7 +31,10 @@ const MIC_LADDER = [
 
 async function openMic (report, from = 0) {
   let lastErr = null
-  for (let i = from; i < MIC_LADDER.length; i++) {
+  // Clamp rather than run off the end. Walking past the last rung threw, which set an
+  // error and left the session with no microphone at all — the retry destroying the
+  // thing it was retrying.
+  for (let i = Math.min(from, MIC_LADDER.length - 1); i < MIC_LADDER.length; i++) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: MIC_LADDER[i] })
       report(i)
@@ -172,9 +175,16 @@ export class MicInput extends InputSource {
       const s = await openMic((i) => { this.constraintsUsed = i }, this.attempt)
       if (this.source) try { this.source.disconnect() } catch {}
       this.stream = s
+      // Point at the NEW track. Leaving this on the one just stopped reported the
+      // microphone as "ended" when the replacement was perfectly alive.
+      this.track = s.getAudioTracks()[0]
+      this.muted = this.track.muted
+      this.track.addEventListener('mute', () => { this.muted = true; this.receiving = false })
+      this.track.addEventListener('ended', () => { this.ended = true; this.receiving = false })
       this.source = this.engine.ctx.createMediaStreamSource(s)
       this.source.connect(this.node)
       this.receiving = false
+      this.silentSince = 0
       return true
     } catch (err) {
       this.error = err.name
