@@ -36,8 +36,18 @@ export class AudioEngine {
     }
 
     this._probeTimestamp()
+    this._fineOffset = null
     this.sampleClock()
     this._clockTimer = setInterval(() => this.sampleClock(), 250)
+    // Sampled every frame, not every 250 ms: catching the moment currentTime ticks over
+    // is a matter of how densely it is watched, and a quarter-second timer would see
+    // roughly three steps go by between looks.
+    const watchFine = () => {
+      if (!this.ctx) return
+      this.sampleFineClock()
+      this._fineRaf = requestAnimationFrame(watchFine)
+    }
+    watchFine()
     return this.ctx
   }
 
@@ -45,6 +55,33 @@ export class AudioEngine {
 
   get sampleRate () { return this.ctx ? this.ctx.sampleRate : 0 }
   get now () { return this.ctx ? this.ctx.currentTime : 0 }
+
+  /**
+   * currentTime, but with a clock that actually ticks.
+   *
+   * On her tablet ctx.currentTime advances in steps of 85.3 ms — one 4096-frame output
+   * buffer at 48 kHz — and holds perfectly still in between. Every accelerometer hit
+   * was being stamped with it, so every hit was snapped to an 85 ms grid before
+   * anything else happened to it. A uniform error of that width has a p90-p10 of 68 ms,
+   * and the app had been reporting a "spread" of about 70 ms all along: it was measuring
+   * its own clock, not her playing. No amount of better peak detection can survive
+   * being timestamped by a stopped watch.
+   *
+   * The recovery is the standard one for reading a fine clock through a coarse one.
+   * currentTime never runs FAST — it sits at the last tick until the next one — so
+   * across many samples the SMALLEST observed value of (performance.now() - currentTime)
+   * is the one taken just after a tick, where the staircase error is nearly zero.
+   * Tracking that minimum recovers an unbiased mapping; averaging instead would lock in
+   * half a step of lag.
+   *
+   * The minimum is allowed to creep back up slowly so that a genuine clock adjustment
+   * is followed rather than remembered forever.
+   */
+  get nowFine () {
+    if (!this.ctx) return 0
+    if (this._fineOffset === null || this._fineOffset === undefined) return this.ctx.currentTime
+    return (performance.now() - this._fineOffset) / 1000
+  }
 
   /**
    * Some Safari versions ship getOutputTimestamp() returning zeros, or contextTime
@@ -98,6 +135,40 @@ export class AudioEngine {
   }
 
   /**
+   * The raw AudioContext time of something that happened at `perfMs` on the performance
+   * timeline. Raw, not audible: no output latency removed, so it sits on the same
+   * timeline as an accelerometer stamp and the two can be subtracted meaningfully.
+   */
+  contextTimeFor (perfMs) {
+    if (!this.ctx) return 0
+    if (this._fineOffset === null || this._fineOffset === undefined) return this.ctx.currentTime
+    return (perfMs - this._fineOffset) / 1000
+  }
+
+  /** One reading towards the fine clock. Cheap enough to run every animation frame. */
+  sampleFineClock () {
+    if (!this.ctx) return
+    const t = this.ctx.currentTime
+    // How coarse is this clock, really? Recorded so the tablet can answer it rather
+    // than be assumed about: it was assumed continuous, and it was not.
+    if (t !== this._lastCoarse) {
+      if (this._lastCoarseAt) {
+        const step = performance.now() - this._lastCoarseAt
+        this.clockStepMs = this.clockStepMs ? Math.max(this.clockStepMs * 0.9, step) : step
+      }
+      this._lastCoarse = t
+      this._lastCoarseAt = performance.now()
+    }
+    const raw = performance.now() - t * 1000
+    if (this._fineOffset === null || this._fineOffset === undefined) { this._fineOffset = raw; return }
+    // A suspended and resumed context restarts its clock; snap rather than crawl.
+    if (Math.abs(raw - this._fineOffset) > 500) { this._fineOffset = raw; return }
+    // 0.05 ms per frame is about 3 ms/s: far more than any real drift between the two
+    // clocks, and slow enough that it never outruns the next tick that resets it.
+    this._fineOffset = Math.min(raw, this._fineOffset + 0.05)
+  }
+
+  /**
    * When a sound scheduled at AudioContext time `t` will actually be heard,
    * expressed in performance.now() milliseconds.
    */
@@ -126,6 +197,7 @@ export class AudioEngine {
 
   async close () {
     clearInterval(this._clockTimer)
+    if (this._fineRaf) cancelAnimationFrame(this._fineRaf)
     if (this.ctx) await this.ctx.close()
     this.ctx = null
   }

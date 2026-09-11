@@ -9,7 +9,7 @@
  * interface without touching anything in here.
  */
 
-import { TEMPO, DRUM_NAV, SCHEDULER, FUSION, CALIBRATION, DETECTOR, WEEK,
+import { TEMPO, DRUM_NAV, SCHEDULER, FUSION, CALIBRATION, DETECTOR, WEEK, MOTION,
   LEVELS, LEVEL_STORAGE_KEY, applyLevel } from './config.js'
 import { EXERCISES, byId } from './exercises.js'
 import { AudioEngine } from './audio-engine.js'
@@ -608,9 +608,20 @@ async function measureMotionDelay () {
     const mad = sorted.map((v) => Math.abs(v - med)).sort((a, b) => a - b)[sorted.length >> 1]
     const kept = sorted.filter((v) => Math.abs(v - med) <= Math.max(mad * 3, 0.03))
     const useMed = kept.length ? kept[kept.length >> 1] : med
-    motionDelayS = rememberPadDelay(Math.max(0, Math.min(0.4, useMed)))
     tapSpreadMs = Math.round(mad * 1.4826 * 1000)
     tapKept = kept.length
+    /*
+     * A reading outside what a 50 Hz sensor can physically do is a broken measurement,
+     * not a slow tablet. Keep the physical estimate rather than let it through.
+     */
+    if (useMed * 1000 > MOTION.padDelayMaxMs) {
+      motionDelayS = MOTION.padDelayFallbackMs / 1000
+      padDelayRefused = Math.round(useMed * 1000)
+      if (debug) console.warn('[drum-buddy] pad delay', padDelayRefused, 'ms is not physically possible; using', MOTION.padDelayFallbackMs)
+    } else {
+      padDelayRefused = null
+      motionDelayS = rememberPadDelay(Math.max(0, useMed))
+    }
   } else if (debug) {
     console.warn('[drum-buddy] only', deltas.length, 'usable taps; keeping the stored delay')
   }
@@ -625,9 +636,20 @@ function waitForTap (target) {
     target.onpointerdown = (e) => {
       clearTimeout(timer)
       target.onpointerdown = null
-      const offset = engine.clockOffset
-      // The event's own timestamp, not the clock read when the handler happens to run.
-      resolve(offset === null ? engine.now : (e.timeStamp - offset) / 1000)
+      /*
+       * Stamped on the RAW context timeline, the same one the accelerometer is stamped
+       * on — so the difference between them is the sensor's delay and nothing else.
+       *
+       * It used to be mapped through clockOffset, which has the output latency folded
+       * into it because that is what animation needs. That made every measured "pad
+       * delay" come out as (sensor delay + output latency), and applyMotionTiming then
+       * added the output latency on top of it a second time. On her tablet that meant
+       * subtracting 356 ms where 185 ms was right: she had to hit 171 ms after the
+       * sound to be told she was on the beat, which is exactly what it felt like.
+       *
+       * The event's own timestamp, not the clock read when the handler happens to run.
+       */
+      resolve(engine.contextTimeFor(e.timeStamp))
     }
   })
 }
@@ -649,6 +671,20 @@ let tapKept = 0
  * median across the last several keeps it steady while still letting a genuine change —
  * a different stand, a different surface — work its way in after a few runs.
  */
+/*
+ * Versioned, and it was missing entirely.
+ *
+ * The name was used to read and write localStorage and defined nowhere, so both calls
+ * threw ReferenceError into a bare catch and the history was silently always exactly
+ * one session long — which is what the diagnostics kept showing and what the median
+ * across sessions was supposed to prevent.
+ *
+ * The suffix is the meaning of the stored number, not the app version: v2 values are
+ * the sensor's delay alone, where v1 values had the output latency inside them. Reading
+ * one as the other is the bug this whole change is about, so they must not mix.
+ */
+const PAD_DELAY_KEY = 'drum-buddy:pad-delay:v2'
+
 function padDelayHistory () {
   try {
     const raw = localStorage.getItem(PAD_DELAY_KEY)
@@ -679,6 +715,7 @@ function rememberPadDelay (measuredS) {
 }
 
 let padDelayHistoryMs = []
+let padDelayRefused = null
 
 /**
  * Tell the timing model what to subtract from a pad hit: how late she HEARS the beat,
@@ -1770,6 +1807,10 @@ function snapshot () {
       outerWindow: `${window.outerWidth}x${window.outerHeight}`,
       standalone: window.matchMedia('(display-mode: standalone)').matches,
       visualLagMs: engine.visualLagMs,
+      // How far apart ctx.currentTime's steps are. Anything much above a couple of
+      // milliseconds means motion timing has to go through engine.nowFine.
+      clockStepMs: engine.clockStepMs ? Math.round(engine.clockStepMs) : null,
+      padDelayRefused,
       trackLatencyMs: mic && mic.stream
         ? Math.round(((mic.stream.getAudioTracks()[0].getSettings() || {}).latency || 0) * 1000)
         : null,

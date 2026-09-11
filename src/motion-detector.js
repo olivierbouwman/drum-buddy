@@ -76,7 +76,9 @@ export class MotionInput extends InputSource {
       : e.accelerationIncludingGravity
     if (!a) return
     const mag = Math.sqrt((a.x || 0) ** 2 + (a.y || 0) ** 2 + (a.z || 0) ** 2)
-    const now = this.engine.now
+    // nowFine, not now: ctx.currentTime moves in 85 ms steps on this tablet, and
+    // stamping hits with it put the whole of that staircase into her score.
+    const now = this.engine.nowFine
 
     /*
      * A rolling window, judged by its median and spread.

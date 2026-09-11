@@ -24,6 +24,8 @@ const check = (name, cond, detail = '') => {
   else { failed++; console.log(`  FAIL ${name}${detail ? '  <- ' + detail : ''}`) }
 }
 
+const near = (a, b, tol) => Math.abs(a - b) <= tol
+
 const RATE = 48000
 const clickPcm = (() => {
   const n = Math.round(RATE * 0.03)
@@ -134,6 +136,38 @@ if (!existsSync(DIR) || !readdirSync(DIR).some((f) => f.endsWith('.wav'))) {
     }
     check('drumming alone produces no phantom clicks', found === 0, `${found} found`)
   }
+}
+
+console.log('\nthe pad correction is not the speaker correction twice')
+{
+  /*
+   * Her tablet, exactly: 171 ms of output latency, and an accelerometer that reports a
+   * hit about 14 ms after the stick lands. A beat scheduled at t=10 is heard at 10.171,
+   * so a perfect hit is stamped at 10.185 and must score as 10.000.
+   */
+  const OUT = 0.171
+  const SENSOR = 0.014
+  const m = new TimingModel()
+  m.setMotionTiming({ outputLatencyS: OUT, motionDelayS: SENSOR })
+
+  const perfect = 10 + OUT + SENSOR
+  check('a perfect pad hit scores on the beat',
+    near(m.correct(perfect, 'motion'), 10, 0.002),
+    `${((m.correct(perfect, 'motion') - 10) * 1000).toFixed(1)} ms off`)
+
+  // The bug: a delay measured against a reference that already had output latency in it
+  // came out as 185 ms, and then output latency was added to it again.
+  const doubled = new TimingModel()
+  doubled.setMotionTiming({ outputLatencyS: OUT, motionDelayS: OUT + SENSOR })
+  const err = (doubled.correct(perfect, 'motion') - 10) * 1000
+  check('the old double count would read a perfect hit as early by the output latency',
+    near(err, -OUT * 1000, 1), `${err.toFixed(1)} ms`)
+
+  // And that is what she felt: to be told she was on the beat she had to hit late by
+  // exactly that much.
+  const toScoreOnBeat = perfect + OUT
+  check('which is why the pad had to be hit 171 ms after the sound',
+    near(doubled.correct(toScoreOnBeat, 'motion'), 10, 0.002))
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`)

@@ -153,6 +153,21 @@ export const DETECTOR = {
  * to metronome bleed and room noise), and the microphone says exactly WHEN.
  */
 export const MOTION = {
+  /*
+   * What a pad delay is allowed to be.
+   *
+   * This is the gap between the stick touching rubber and the accelerometer sample that
+   * shows it — quantisation at ~50 Hz plus however long the browser sits on the event.
+   * Tens of milliseconds, physically. It cannot be 185.
+   *
+   * It was reading 185 because the tap it was compared against had the output latency
+   * folded into it, so a measurement of the sensor was really a measurement of the
+   * speaker. A ceiling here means that class of mistake shows up as a refused reading
+   * instead of quietly becoming her score.
+   */
+  padDelayMaxMs: 90,
+  padDelayFallbackMs: 25,
+
   minRateHz: 25,        // below this the sensor is useless even for confirmation
   windowS: 3.0,         // how much history the median and spread are taken over
   /**
