@@ -26,6 +26,7 @@ import { SelfTest } from './selftest.js'
 import { startDiagnostics, sendSession, wavFromFloat, diagnosticsActive } from './diagnostics.js'
 import { LiveScorer, summarise, scoreFor, notesPerMinute } from './scoring.js'
 import * as history from './history.js'
+import * as players from './players.js'
 import { assess } from './level-coach.js'
 
 const $ = (id) => document.getElementById(id)
@@ -1041,6 +1042,82 @@ function showSelfTest () {
   }
 }
 
+// ---------------------------------------------------------------- players
+
+/**
+ * Progress is personal, so scores and level are stored per player. The measured latency
+ * and the pad's sensor delay are not — they describe this tablet on this pad, and
+ * everyone who plays here shares them.
+ */
+function renderPlayerChip () {
+  const p = players.current()
+  $('player-emoji').textContent = p.emoji
+  $('player-name').textContent = p.name
+  $('player-chip').setAttribute('aria-label', `Playing as ${p.name}. Tap to change.`)
+}
+
+function showPlayers () {
+  const grid = $('player-grid')
+  grid.innerHTML = ''
+  const now = players.current()
+  for (const p of [...players.list(), players.GUEST]) {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.setAttribute('aria-pressed', String(p.id === now.id))
+    b.innerHTML = '<span class="face"></span><span class="who"></span>'
+    b.querySelector('.face').textContent = p.emoji
+    b.querySelector('.who').textContent = p.name
+    if (p.guest) {
+      const sub = document.createElement('span')
+      sub.className = 'sub'
+      sub.textContent = 'nothing saved to her'
+      b.append(sub)
+    }
+    b.addEventListener('click', () => {
+      players.setCurrent(p.id)
+      loadLevel()
+      renderPlayerChip()
+      show('start')
+    })
+    grid.append(b)
+  }
+  show('players')
+}
+
+function showNewPlayer () {
+  let chosen = players.AVATARS[0]
+  const grid = $('avatar-grid')
+  grid.innerHTML = ''
+  for (const emoji of players.AVATARS) {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.textContent = emoji
+    b.setAttribute('aria-label', 'Choose ' + emoji)
+    b.setAttribute('aria-pressed', String(emoji === chosen))
+    b.addEventListener('click', () => {
+      chosen = emoji
+      for (const other of grid.children) other.setAttribute('aria-pressed', String(other === b))
+    })
+    grid.append(b)
+  }
+  $('newp-name').value = ''
+  show('new-player')
+  setTimeout(() => $('newp-name').focus(), 100)
+
+  $('btn-save-player').onclick = () => {
+    players.create($('newp-name').value, chosen)
+    loadLevel()
+    renderPlayerChip()
+    show('start')
+  }
+  $('btn-cancel-player').onclick = () => showPlayers()
+}
+
+$('player-chip').addEventListener('click', showPlayers)
+$('btn-new-player').addEventListener('click', showNewPlayer)
+$('btn-players-back').addEventListener('click', () => show('start'))
+renderPlayerChip()
+
 // ------------------------------------------------------------ difficulty
 
 /**
@@ -1059,12 +1136,12 @@ let autoLevel = true
 
 function loadLevel () {
   try {
-    const id = localStorage.getItem(LEVEL_STORAGE_KEY)
+    const id = localStorage.getItem(players.key(LEVEL_STORAGE_KEY))
     autoLevel = id === null || id === 'auto'
     const found = LEVELS.find((l) => l.id === id)
     if (found) level = found
     if (autoLevel) {
-      const savedAuto = LEVELS.find((l) => l.id === localStorage.getItem(LEVEL_STORAGE_KEY + '.auto'))
+      const savedAuto = LEVELS.find((l) => l.id === localStorage.getItem(players.key(LEVEL_STORAGE_KEY + '.auto')))
       if (savedAuto) level = savedAuto
     }
   } catch { /* storage unavailable; the default is fine */ }
@@ -1123,7 +1200,7 @@ function renderLevels () {
     b.setAttribute('aria-pressed', String(!autoLevel && l.id === level.id))
     b.addEventListener('click', () => {
       autoLevel = false
-      try { localStorage.setItem(LEVEL_STORAGE_KEY, l.id) } catch {}
+      try { localStorage.setItem(players.key(LEVEL_STORAGE_KEY), l.id) } catch {}
       setLevel(l, { announce: `Timing check: ${l.name}` })
     })
     host.append(b)
@@ -1204,6 +1281,28 @@ function snapshot () {
   const q = (f) => (hs.length ? hs[Math.floor((hs.length - 1) * f)] : null)
   return {
     when: new Date().toISOString(),
+    // The real numbers, so layout can be checked against the device she uses rather
+    // than against a guess at what an old tablet is.
+    viewport: {
+      w: window.innerWidth,
+      h: window.innerHeight,
+      dpr: window.devicePixelRatio,
+      orientation: window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait',
+      fullscreen: !!document.fullscreenElement ||
+        window.matchMedia('(display-mode: fullscreen)').matches,
+      overflowing: (() => {
+        const on = document.querySelector('.screen.on')
+        if (!on) return []
+        return [...on.querySelectorAll('*')]
+          .filter((el) => {
+            const r = el.getBoundingClientRect()
+            return r.height > 0 && (r.bottom > window.innerHeight + 1 || r.top < -1 ||
+              r.right > window.innerWidth + 1 || r.left < -1)
+          })
+          .map((el) => (el.id || el.className || el.tagName).toString().slice(0, 30))
+          .slice(0, 6)
+      })(),
+    },
     screen: [...document.querySelectorAll('.screen')].find((x) => x.classList.contains('on'))?.id,
     sensors: {
       timingFrom: input ? input.timingSource : 'none',

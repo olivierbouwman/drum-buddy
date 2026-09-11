@@ -26,7 +26,10 @@
   <h1 class="logo">Drum&nbsp;Buddy</h1>
   <p class="tagline">Play along with the beat</p>
 
-  <div class="mascot" aria-hidden="true">🦦</div>
+  <button id="player-chip" class="player-chip">
+    <span id="player-emoji" aria-hidden="true">🦦</span>
+    <span id="player-name">Drummer</span>
+  </button>
 
   <button id="btn-play" class="huge">▶ Play</button>
 
@@ -40,6 +43,29 @@
   <p class="fineprint" id="start-note">
     Uses the microphone to hear your drum. Nothing is recorded or sent anywhere.
   </p>
+</section>
+
+<!-- --------------------------------------------------------------- players -->
+<section id="screen-players" class="screen" aria-labelledby="players-title">
+  <h2 id="players-title" class="big-title">Who's drumming?</h2>
+  <div class="player-grid" id="player-grid"></div>
+  <button id="btn-new-player" class="ghost">+ New drummer</button>
+  <button id="btn-players-back" class="ghost">Back</button>
+</section>
+
+<!-- ----------------------------------------------------------- new player -->
+<section id="screen-new-player" class="screen" aria-labelledby="newp-title">
+  <h2 id="newp-title" class="big-title">New drummer</h2>
+  <label class="namefield">
+    <span class="sr-only">Name</span>
+    <input id="newp-name" type="text" maxlength="14" placeholder="Your name" autocomplete="off">
+  </label>
+  <p class="instruction">Pick an animal</p>
+  <div class="avatar-grid" id="avatar-grid"></div>
+  <div class="row">
+    <button id="btn-save-player" class="huge">Let's go!</button>
+    <button id="btn-cancel-player" class="ghost">Cancel</button>
+  </div>
 </section>
 
 <!-- -------------------------------------------------------------- warm-up -->

@@ -12,8 +12,13 @@
  * a better one months ago.
  */
 
-const KEY = 'drum-practice.scores.v1'
+import { key as playerKey } from './players.js'
+
+const BASE = 'drum-practice.scores.v1'
 const CAP = 500
+
+/** Scores belong to a person, not to the tablet — see players.js. */
+const KEY = () => playerKey(BASE)
 
 const sameDay = (a, b) => {
   const x = new Date(a)
@@ -24,7 +29,7 @@ const sameDay = (a, b) => {
 
 export function load () {
   try {
-    const raw = localStorage.getItem(KEY)
+    const raw = localStorage.getItem(KEY())
     if (!raw) return []
     const v = JSON.parse(raw)
     return Array.isArray(v) ? v.filter((e) => typeof e.score === 'number') : []
@@ -35,7 +40,7 @@ export function load () {
 
 function save (list) {
   try {
-    localStorage.setItem(KEY, JSON.stringify(list.slice(-CAP)))
+    localStorage.setItem(KEY(), JSON.stringify(list.slice(-CAP)))
   } catch { /* nothing here is worth interrupting her for */ }
 }
 
@@ -89,6 +94,40 @@ export function attemptsAtLevel (levelId) {
   return count
 }
 
+/**
+ * How many days in a row she has practised, and how many days in total.
+ *
+ * A streak is the strongest pull back tomorrow there is, so it is worth having — but it
+ * only counts a day once she has FINISHED a session, and today never breaks it. A child
+ * should not lose fourteen days because she opened the app at bedtime and stopped.
+ */
+export function days () {
+  const list = load()
+  if (!list.length) return { streak: 0, total: 0, practisedToday: false }
+
+  const dayKey = (t) => {
+    const d = new Date(t)
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+  }
+  const keys = [...new Set(list.map((e) => dayKey(e.at)))]
+  const now = Date.now()
+  const today = dayKey(now)
+  const yesterday = dayKey(now - 864e5)
+  const practisedToday = keys.includes(today)
+
+  // Count back from today, or from yesterday if today has not happened yet — so the
+  // streak only breaks after a day is genuinely missed, not part-way through one.
+  let cursor = practisedToday ? now : now - 864e5
+  let streak = 0
+  if (practisedToday || keys.includes(yesterday)) {
+    while (keys.includes(dayKey(cursor))) {
+      streak++
+      cursor -= 864e5
+    }
+  }
+  return { streak, total: keys.length, practisedToday }
+}
+
 export function clear () {
-  try { localStorage.removeItem(KEY) } catch {}
+  try { localStorage.removeItem(KEY()) } catch {}
 }

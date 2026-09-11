@@ -158,9 +158,45 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
   background: var(--kraft); color: #33240f; border-color: var(--ink);
 }
 
-/* ------------------------------------------------------- mascot */
+/* ------------------------------------------------------- players */
 
-.mascot { font-size: clamp(3rem, 14vw, 5.5rem); line-height: 1; }
+.player-chip {
+  display: flex; align-items: center; gap: .6rem;
+  background: #ffffff14; color: var(--ink);
+  padding: .5em 1.1em .5em .7em; border-radius: 999px;
+  font-weight: 800; font-size: 1.05rem;
+}
+.player-chip span:first-child { font-size: 2rem; line-height: 1; }
+.player-chip:hover { background: #ffffff26; }
+
+.player-grid, .avatar-grid {
+  display: flex; flex-wrap: wrap; gap: .6rem; justify-content: center;
+  max-width: min(90vw, 34rem);
+}
+.player-grid button {
+  display: flex; flex-direction: column; align-items: center; gap: .2rem;
+  background: #ffffff14; color: var(--ink);
+  padding: .6rem 1rem; border-radius: 16px; font-weight: 800; font-size: .9rem;
+  border: 2px solid transparent;
+}
+.player-grid button .face { font-size: 2.2rem; line-height: 1; }
+.player-grid button[aria-pressed="true"] { border-color: var(--hot); background: #ffffff26; }
+.player-grid .sub { font-size: .72rem; color: var(--muted); font-weight: 600; }
+
+.avatar-grid button {
+  font-size: 2rem; line-height: 1; padding: .3em;
+  background: #ffffff14; border-radius: 14px; border: 2px solid transparent;
+  min-width: 3.2rem; min-height: 3.2rem;
+}
+.avatar-grid button[aria-pressed="true"] { border-color: var(--hot); background: #ffffff2e; }
+
+.namefield input {
+  font: inherit; font-weight: 800; font-size: 1.2rem; text-align: center;
+  background: #00000038; color: var(--ink);
+  border: 2px solid var(--line); border-radius: 12px;
+  padding: .5em 1em; min-height: 48px; max-width: 14rem;
+}
+.namefield input:focus-visible { outline: 3px solid var(--hot); outline-offset: 2px; }
 
 /* Progress through the "listening to the room" phase, which used to be carried by
    animals waking up one at a time. */
