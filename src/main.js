@@ -484,16 +484,15 @@ async function watchForSilentMic () {
    * silence instead of refusing them. Said once, and gently: the pad sensor is what
    * scores her playing, and it works regardless.
    */
-  if (!micSilenceReported) {
-    micSilenceReported = true
-    setTimeout(() => {
-      if (mic && !mic.receiving) {
-        toast(mic.muted || mic.permission === 'denied'
-          ? 'Microphone is switched off — the pad still works'
-          : 'I can’t hear anything through the microphone — the pad still works', 5000)
-      }
-    }, 2500)
-  }
+  /*
+   * Said nothing, deliberately.
+   *
+   * The microphone scores nothing, times nothing and checks nothing any more — it is a
+   * fallback for a tablet that cannot feel the pad, and this tablet can. Announcing its
+   * silence during the four warm-up hits was reporting a problem she does not have,
+   * about a part she does not use, in the middle of the one thing she came to do.
+   * It stays in the diagnostics, where it belongs.
+   */
   if (debug) console.warn('[drum-buddy] microphone delivered nothing; re-acquired:', ok)
   setTimeout(() => { reacquiring = false }, 8000)
   // Even if that fails she keeps playing: the pad sensor picks the exercise up.
@@ -1390,7 +1389,18 @@ let disarm = () => {}
 /** A quarter of her hits are softer than this, so noise almost never reaches it. */
 function deliberateHitThreshold () {
   const xs = state.hitStrengths
-  if (xs.length < 8) return null            // not enough evidence; don't guess
+  /*
+   * Four, because four is what the warm-up produces.
+   *
+   * This wanted eight, and the warm-up asks for four hits and then moves on — so on the
+   * Today screen, the one screen where drumming to start is the whole point, the
+   * threshold was always null and the option never appeared. It has been asked for
+   * repeatedly and was silently disabled by an off-by-one-ritual.
+   *
+   * Four samples is enough for what this does: the bar is the quietest quarter of her
+   * OWN hits, and the gesture still needs three of them inside a second and a half.
+   */
+  if (xs.length < 4) return null
   const sorted = [...xs].sort((a, b) => a - b)
   return sorted[Math.floor(sorted.length * 0.25)]
 }
@@ -1701,7 +1711,11 @@ function armFullscreenRetry () {
       fullscreenNote = 'retried'
       if (r && r.then) {
         r.then(() => { fullscreenNote = 'granted (retry)' })
-          .catch((err) => { fullscreenNote = 'retry refused: ' + (err && err.name) })
+          .catch((err) => {
+            // The name alone has been 'TypeError' twice with no way to tell which of
+            // Chrome's several TypeErrors it is. The message says which.
+            fullscreenNote = 'retry refused: ' + (err && err.name) + ': ' + (err && err.message)
+          })
       }
     } catch (err) {
       fullscreenNote = 'retry threw: ' + (err && err.name)
