@@ -45,6 +45,42 @@
   </p>
 </section>
 
+<!-- ----------------------------------------------------------------- tune -->
+<!--
+  Sound/picture alignment, set by ear. Reached with ?tune and never shown to her.
+
+  Every attempt to derive this number has been a guess dressed as a measurement: the
+  browser's reported latency is nominal, the accelerometer cannot hear the speaker, and
+  the microphone round trip needs halving on an assumption. A person judging whether two
+  things happened at the same moment is good to about twenty milliseconds, which is
+  better than any of them, and it only has to be done once.
+-->
+<section id="screen-tune" class="screen" aria-labelledby="tune-title">
+  <h2 id="tune-title" class="big-title">Line up the beep</h2>
+  <p class="setup-note">
+    Watch the circle and listen. Adjust until the beep happens at the exact moment the
+    circle flashes — not before, not after.
+  </p>
+
+  <div class="tune-stage">
+    <div id="tune-pulse" class="tune-pulse" aria-hidden="true"></div>
+  </div>
+
+  <div class="tune-controls">
+    <button id="tune-down" class="tune-step" aria-label="Beep 5 milliseconds later">−</button>
+    <div class="tune-readout">
+      <output id="tune-value" aria-live="polite" aria-atomic="true">0 ms</output>
+      <span class="tune-caption">beep played early</span>
+    </div>
+    <button id="tune-up" class="tune-step" aria-label="Beep 5 milliseconds earlier">+</button>
+  </div>
+
+  <p class="fineprint" id="tune-hint">
+    Arrow keys work too. Saved as soon as you change it.
+  </p>
+  <button id="tune-reset" class="ghost">Start over</button>
+</section>
+
 <!-- --------------------------------------------------------------- players -->
 <section id="screen-players" class="screen" aria-labelledby="players-title">
   <h2 id="players-title" class="big-title">Who's drumming?</h2>

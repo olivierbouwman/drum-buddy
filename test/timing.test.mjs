@@ -206,23 +206,41 @@ console.log('\nthe metronome nudge moves the sound, not the goalposts')
     METRONOME.nudgeMs < 60000 / 200, `${METRONOME.nudgeMs} ms`)
 }
 
-console.log('\nthe nudge is derived, not guessed')
+console.log('\nthe nudge is the latency term that was being dropped')
 {
   const FALLBACK = METRONOME.nudgeMs / 1000
   const MAX = METRONOME.nudgeMaxMs / 1000
-  const n = (rt, rep) => speakerNudgeS(rt, rep, FALLBACK, MAX) * 1000
+  const n = (base, rt, rep, tuned) => speakerNudgeS(base, rt, rep, FALLBACK, MAX, tuned) * 1000
 
-  // Her tablet: 496 ms measured round trip, 171 ms claimed by Chrome.
-  check('her tablet gets 77 ms', near(n(0.496, 0.171), 77, 0.5), `${n(0.496, 0.171).toFixed(1)} ms`)
-  check('which is more than double the flat guess it replaces', n(0.496, 0.171) > METRONOME.nudgeMs * 2)
+  /*
+   * Her tablet: baseLatency is one 4096-frame buffer at 48 kHz, and Chrome reports
+   * outputLatency separately. The spec makes them sequential, so the sound was arriving
+   * a whole baseLatency after the app said it would.
+   */
+  const BASE = 4096 / 48000
+  check('the missing term is used directly', near(n(BASE, 0.496, 0.171), 85.3, 0.5),
+    `${n(BASE, 0.496, 0.171).toFixed(1)} ms`)
 
-  // A browser that reports honestly needs no help at all.
-  check('an accurate browser gets no nudge', n(0.496, 0.248) === 0)
-  check('a generous browser is not corrected downwards', n(0.496, 0.400) === 0)
+  // The completely independent estimate, from the acoustic round trip.
+  const fromRoundTrip = 496 / 2 - 171
+  check('and the round trip independently agrees within 10 ms',
+    Math.abs(n(BASE, 0.496, 0.171) - fromRoundTrip) < 10,
+    `baseLatency says ${n(BASE, 0.496, 0.171).toFixed(0)}, round trip says ${fromRoundTrip}`)
 
-  check('never measured falls back', near(n(null, 0.171), METRONOME.nudgeMs, 0.001))
-  check('a nonsense round trip falls back', near(n(0, 0.171), METRONOME.nudgeMs, 0.001))
-  check('an absurd round trip is capped', n(4.0, 0.171) === METRONOME.nudgeMaxMs)
+  check('a browser with no baseLatency falls back to the round trip',
+    near(n(0, 0.496, 0.171), fromRoundTrip, 0.5))
+  check('with neither, the flat default', near(n(0, null, 0.171), METRONOME.nudgeMs, 0.001))
+  check('an accurate round trip needs no nudge', n(0, 0.496, 0.248) === 0)
+  check('nothing absurd gets through', n(9, 9, 0) === METRONOME.nudgeMaxMs)
+  check('never negative', n(-1, -1, 5) >= 0)
+
+  /*
+   * A value set by ear outranks all of it. Everything above is an inference; someone
+   * watching a light and listening for a beep is judging the thing itself.
+   */
+  check('a tuned value wins over baseLatency', near(n(BASE, 0.496, 0.171, 0.042), 42, 0.5))
+  check('a tuned zero is honoured, not treated as absent', n(BASE, 0.496, 0.171, 0) === 0)
+  check('a tuned value is still capped', n(BASE, 0.496, 0.171, 9) === METRONOME.nudgeMaxMs)
 
   // The scheduler has to reach a beat before it needs to emit it.
   check('the lookahead can always cover the largest nudge',

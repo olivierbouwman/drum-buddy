@@ -744,3 +744,66 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 @media (max-height: 500px) {
   .progress { height: 5px; }
 }
+
+/* ------------------------------------------------------------- tuner */
+
+/*
+ * The ?tune screen. Never seen by her, so it is plain — but it still has to be legible
+ * and operable, because the person using it is doing a fine perceptual judgement and
+ * anything fighting for attention makes that harder.
+ */
+.tune-stage {
+  display: grid;
+  place-items: center;
+  min-height: 34vh;
+}
+.tune-pulse {
+  width: clamp(90px, 22vh, 170px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--lantern, #ffb347);
+  /* Rests dim and small: the flash has to be an event, not a change of shade. */
+  opacity: .18;
+  transform: scale(.72);
+}
+.tune-pulse.flash {
+  opacity: 1;
+  transform: scale(1);
+  /* No transition on the way in — the onset must be instantaneous, or there is nothing
+     unambiguous to line the sound up against. Only the fade out is animated. */
+  transition: opacity .16s ease-out, transform .16s ease-out;
+}
+
+.tune-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(1rem, 5vw, 2.5rem);
+  margin: var(--pad) 0;
+}
+.tune-step {
+  min-width: 72px;
+  min-height: 72px;
+  border-radius: 50%;
+  font-size: 2rem;
+  line-height: 1;
+  border: 2px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.tune-step:active { background: rgba(255, 255, 255, .12); }
+.tune-readout { text-align: center; min-width: 8ch; }
+#tune-value {
+  display: block;
+  font-size: clamp(1.8rem, 6vh, 2.8rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.tune-caption { font-size: .8rem; opacity: .7; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* The flash is the whole point of this screen, so it stays — but it stops scaling,
+     which is the part that reads as motion rather than as a light coming on. */
+  .tune-pulse, .tune-pulse.flash { transform: none; }
+}

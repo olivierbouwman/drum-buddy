@@ -37,6 +37,7 @@ const debug = params.has('debug') || params.has('selftest')
 // The pad sensor's delay is a property of the device, not of the day. Measured once on
 // something new, then left alone; see the note in runWarmup().
 const wantsCalibration = params.has('calibrate')
+const wantsTuner = params.has('tune')
 /*
  * Speaker test: can the accelerometer feel the tablet's own speaker?
  *
@@ -152,6 +153,8 @@ $('btn-play').addEventListener('click', async () => {
     setInterval(watchForSilentMic, 1000)
 
     keepAwake()
+    // The tuner needs the speaker and nothing else: no sensors, no warm-up, no plan.
+    if (wantsTuner) { await runTuner(); return }
     show('warmup')
     await setUpSensors()
     if (wantSelfTest) { showSelfTest(); return }
@@ -1129,13 +1132,6 @@ function startExercise (index, step = null) {
   // Speaker test: thump instead of tick, and say so on screen so a run cannot be
   // mistaken for a practice.
   scheduler.thumpMode = speakerTest
-  /*
-   * Recomputed per exercise, because the stored round trip can change between sessions
-   * and the browser's own figure is read fresh from the context each time.
-   */
-  scheduler.nudgeS = speakerNudgeS(
-    timing.latencyS, engine.outputLatency,
-    METRONOME.nudgeMs / 1000, METRONOME.nudgeMaxMs / 1000)
   if (speakerTest) $('ex-name').textContent = 'SPEAKER TEST — do not play'
 
   visuals.beatS = beatS
@@ -1147,6 +1143,19 @@ function startExercise (index, step = null) {
   // — but any of them beats leaving her without feedback.
   ensureLatency()
   applyMotionTiming()
+
+  /*
+   * After ensureLatency, not before it.
+   *
+   * This used to run a dozen lines earlier, while timing.latencyS could still be null on
+   * the first exercise of a session — so the nudge silently fell back to its default and
+   * the fix did nothing on exactly the run it was meant to fix.
+   */
+  const tunedMs = storedNudgeMs()
+  scheduler.nudgeS = speakerNudgeS(
+    engine.baseLatency, timing.latencyS, engine.outputLatency,
+    METRONOME.nudgeMs / 1000, METRONOME.nudgeMaxMs / 1000,
+    tunedMs === null ? null : tunedMs / 1000)
   /*
    * There used to be a warning here when the timing was "approximate".
    *
@@ -1909,6 +1918,8 @@ function snapshot () {
       // milliseconds means motion timing has to go through engine.nowFine.
       clockStepMs: engine.clockStepMs ? Math.round(engine.clockStepMs) : null,
       nudgeMs: scheduler && scheduler.nudgeS != null ? Math.round(scheduler.nudgeS * 1000) : null,
+      baseLatencyMs: Math.round((engine.baseLatency || 0) * 1000),
+      nudgeTunedMs: storedNudgeMs(),
       padDelayRefused,
       todayWatch,
       warmupHits,
@@ -1940,6 +1951,95 @@ function snapshot () {
     // Anything that blew up, so a silent failure on the tablet is not invisible.
     errors: runtimeErrors,
       }
+}
+
+// ----------------------------------------------------------------- tune
+
+/*
+ * Set the sound/picture offset by ear, once, on ?tune.
+ *
+ * Every attempt to derive this has been an inference. The browser's reported output
+ * latency is nominal and on her tablet it is short by most of a buffer. The
+ * accelerometer cannot hear the speaker — its sensor latches to a constant when the
+ * tablet is still, so there is nothing to correlate. The microphone round trip has to be
+ * halved on an assumption of symmetry that nothing here can check.
+ *
+ * A person judging whether a light and a sound happened together is good to roughly
+ * twenty milliseconds, which is better than all of that, and it only has to be done
+ * once per device. So this screen exists, it is never shown to her, and what it stores
+ * outranks every calculation.
+ */
+const NUDGE_KEY = 'drum-buddy:nudge-ms'
+
+function storedNudgeMs () {
+  try {
+    const raw = localStorage.getItem(NUDGE_KEY)
+    if (raw === null) return null
+    const v = Number(raw)
+    return Number.isFinite(v) ? v : null
+  } catch { return null }
+}
+
+function storeNudgeMs (ms) {
+  try { localStorage.setItem(NUDGE_KEY, String(ms)) } catch { /* private mode */ }
+}
+
+async function runTuner () {
+  show('tune')
+  await engine.start()
+  await clicks.prepare()
+
+  const STEP = 5
+  let nudgeMs = storedNudgeMs() ?? Math.round((engine.baseLatency || 0) * 1000)
+  nudgeMs = Math.max(0, Math.min(nudgeMs, METRONOME.nudgeMaxMs))
+
+  const value = $('tune-value')
+  const pulse = $('tune-pulse')
+  const render = () => { value.textContent = `${nudgeMs} ms` }
+  render()
+
+  const change = (delta) => {
+    nudgeMs = Math.max(0, Math.min(nudgeMs + delta, METRONOME.nudgeMaxMs))
+    storeNudgeMs(nudgeMs)
+    render()
+  }
+  $('tune-up').addEventListener('click', () => change(STEP))
+  $('tune-down').addEventListener('click', () => change(-STEP))
+  $('tune-reset').addEventListener('click', () => {
+    try { localStorage.removeItem(NUDGE_KEY) } catch {}
+    nudgeMs = Math.round((engine.baseLatency || 0) * 1000)
+    render()
+  })
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { change(STEP); e.preventDefault() }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { change(-STEP); e.preventDefault() }
+  })
+
+  /*
+   * A plain lookahead loop rather than the exercise scheduler: this one never ends, has
+   * no notes and no count-in, and needs the nudge to change between one beat and the
+   * next so the effect of a button press is heard immediately.
+   */
+  const BEAT = 0.75                       // 80 bpm: often enough to judge, slow enough to hear each one
+  let next = engine.now + 0.3
+  setInterval(() => {
+    const horizon = engine.now + SCHEDULER.lookaheadS
+    while (next < horizon) {
+      const beat = next
+      clicks.playAt('beat', Math.max(engine.now, beat - nudgeMs / 1000))
+      /*
+       * The flash is scheduled against the beat itself, exactly as a falling note is
+       * during a real exercise — so what is being lined up here is the same relationship
+       * the app uses to score her, not a separate approximation of it.
+       */
+      const when = engine.audibleAt(beat) - performance.now()
+      setTimeout(() => {
+        pulse.classList.add('flash')
+        setTimeout(() => pulse.classList.remove('flash'), 90)
+      }, Math.max(0, when))
+      next += BEAT
+    }
+  }, 100)
 }
 
 // --------------------------------------------------------------- dancers

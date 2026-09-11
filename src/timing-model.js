@@ -249,28 +249,53 @@ export class TimingModel {
 /**
  * How far ahead of its beat the click has to be handed to the speaker.
  *
- * The browser's reported output latency is a nominal figure on Android, and on her
- * tablet it is short: playing to the click scored late even after a flat 30 ms of
- * compensation. The device has, though, measured one real acoustic quantity — the round
- * trip from its own speaker back into its own microphone. Half of that is the outbound
- * half, and the code that used to rely on it recorded landing within 7 ms of what her
- * playing actually needed.
+ * The Web Audio clock has TWO latencies in series and the app was only counting one.
  *
- * So the nudge is the gap between that and what the browser claims. On her tablet:
- * 496 / 2 = 248 measured, 171 claimed, so the sound has been arriving 77 ms after the
- * moment the app drew the note crossing the line.
+ *   baseLatency    graph -> audio subsystem
+ *   outputLatency  audio subsystem -> speaker
  *
- * Never negative — if the browser's figure is already generous, the honest thing is to
- * leave the timing alone rather than delay the click to match a bad estimate.
+ * The spec defines them as sequential, so the real delay from scheduling a sound to
+ * hearing it is their sum. The app predicted arrival using outputLatency alone and drew
+ * the note crossing the line at that moment, so the sound came out baseLatency late,
+ * every beat. On her tablet baseLatency is one 4096-frame buffer — 85 ms — which is why
+ * playing to the click scored late while playing to the graphics scored correctly.
  *
- * @param {number|null} roundTripS  measured speaker-to-microphone round trip
- * @param {number} reportedOutputS  what the browser claims
- * @param {number} fallbackS        used when nothing has ever been measured
+ * Two independent numbers agree on the size of it. baseLatency reads about 85 ms, and
+ * the measured speaker-to-microphone round trip of 496 ms implies an outbound leg of
+ * 248 ms against the 171 ms Chrome reports — a shortfall of 77 ms. Within 8 ms of each
+ * other, from completely different evidence.
+ *
+ * baseLatency is used because it is the exact missing term, it needs no microphone, and
+ * it is available on the first beat of a fresh install rather than only after something
+ * has been measured and stored. The round trip is the fallback for a browser that does
+ * not report it.
+ *
+ * @param {number} baseLatencyS     ctx.baseLatency: the term that was being dropped
+ * @param {number|null} roundTripS  measured speaker-to-microphone round trip, if any
+ * @param {number} reportedOutputS  ctx.outputLatency
+ * @param {number} fallbackS        when nothing at all is known
  * @param {number} maxS             ceiling; a reading above it is not believed
  */
-export function speakerNudgeS (roundTripS, reportedOutputS, fallbackS, maxS) {
-  if (!roundTripS || roundTripS <= 0) return Math.min(fallbackS, maxS)
-  const shortfall = roundTripS / 2 - (reportedOutputS || 0)
-  if (!Number.isFinite(shortfall)) return Math.min(fallbackS, maxS)
-  return Math.max(0, Math.min(shortfall, maxS))
+export function speakerNudgeS (baseLatencyS, roundTripS, reportedOutputS, fallbackS, maxS, tunedS) {
+  const clamp = (v) => Math.max(0, Math.min(v, maxS))
+
+  /*
+   * A value set by ear on the ?tune screen beats every calculation here.
+   *
+   * Each derivation below is an inference: the browser's reported latency is a nominal
+   * figure, the round trip needs halving on an assumption of symmetry, and baseLatency
+   * is the right term only if the spec's model matches what the device actually does.
+   * Someone watching a light and listening for a beep is judging the thing itself, to
+   * about twenty milliseconds. That wins.
+   */
+  if (Number.isFinite(tunedS) && tunedS !== null) return clamp(tunedS)
+
+  if (baseLatencyS > 0 && Number.isFinite(baseLatencyS)) return clamp(baseLatencyS)
+
+  if (roundTripS > 0 && Number.isFinite(roundTripS)) {
+    const shortfall = roundTripS / 2 - (reportedOutputS || 0)
+    if (Number.isFinite(shortfall)) return clamp(shortfall)
+  }
+
+  return Math.min(fallbackS, maxS)
 }

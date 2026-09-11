@@ -90,6 +90,12 @@ export class AudioEngine {
    */
   _probeTimestamp () {
     this.outputLatency = this.ctx.outputLatency || (this.ctx.baseLatency || 0.01) * 2 || 0.02
+    // Kept separately rather than folded in. It is the second half of the true delay to
+    // the speaker, and the click is emitted early by exactly this much so the sound
+    // lands where the app already predicted — see speakerNudgeS(). Folding it into
+    // outputLatency instead would move the visuals later to meet the late sound, which
+    // fixes the same mismatch by making everything slower.
+    this.baseLatency = this.ctx.baseLatency || 0
     try {
       const ts = this.ctx.getOutputTimestamp()
       const lag = this.ctx.currentTime - ts.contextTime
