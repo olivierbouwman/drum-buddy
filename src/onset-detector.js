@@ -9,6 +9,38 @@
 import { DETECTOR } from './config.js'
 import { InputSource } from './input-sources.js'
 
+/**
+ * Open the microphone, stepping down through less and less demanding requests.
+ *
+ * Raw audio is what the detector wants: echo cancellation, noise suppression and
+ * automatic gain all smear or gate the transients it looks for, and echo cancellation
+ * would remove the very metronome the latency probe listens for.
+ *
+ * But some Android stacks answer a request for fully raw audio with a live, permitted,
+ * entirely SILENT stream — no error, every sample a zero. That is what this tablet
+ * reported while Chrome's own permission page showed the microphone allowed and
+ * recently used. A processed stream beats a silent one, so the ladder ends somewhere
+ * that always works.
+ */
+const MIC_LADDER = [
+  { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
+  { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+  { echoCancellation: false },
+  true,
+]
+
+async function openMic (report, from = 0) {
+  let lastErr = null
+  for (let i = from; i < MIC_LADDER.length; i++) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: MIC_LADDER[i] })
+      report(i)
+      return stream
+    } catch (err) { lastErr = err }
+  }
+  throw lastErr || new Error('NotFoundError')
+}
+
 export class MicInput extends InputSource {
   constructor (engine, { recordSeconds = 0 } = {}) {
     super('mic')
@@ -34,16 +66,7 @@ export class MicInput extends InputSource {
   async init () {
     const ctx = this.engine.ctx
     try {
-      // Every one of these would smear or gate the transients we detect, so they must
-      // be off. Safari and Android honour them inconsistently, hence the read-back.
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          channelCount: 1,
-        },
-      })
+      this.stream = await openMic((i) => { this.constraintsUsed = i })
     } catch (err) {
       this.error = err.name
       return false
@@ -143,14 +166,10 @@ export class MicInput extends InputSource {
   async reacquire () {
     try {
       if (this.stream) this.stream.getTracks().forEach((t) => t.stop())
-      const s = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          channelCount: 1,
-        },
-      })
+      // Step down the ladder each time, so a stack that will not deliver raw audio
+      // eventually gets asked for something it will.
+      this.attempt = (this.attempt || 0) + 1
+      const s = await openMic((i) => { this.constraintsUsed = i }, this.attempt)
       if (this.source) try { this.source.disconnect() } catch {}
       this.stream = s
       this.source = this.engine.ctx.createMediaStreamSource(s)

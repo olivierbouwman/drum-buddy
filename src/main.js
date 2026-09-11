@@ -1697,6 +1697,7 @@ function snapshot () {
       micMuted: mic ? mic.muted : null,
       micPermission: mic ? mic.permission : null,
       micTrackState: mic && mic.track ? mic.track.readyState : null,
+      micConstraints: mic ? mic.constraintsUsed : null,
       motionOffsetMs: input && input.motionOffsetS ? Math.round(input.motionOffsetS * 1000) : 0,
       motionDelayMs: Math.round(motionDelayS * 1000),
       tapDeltasMs,
