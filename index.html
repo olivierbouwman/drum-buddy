@@ -125,6 +125,17 @@
   <button id="btn-home" class="ghost">Back to the start</button>
 </section>
 
+<section id="screen-selftest" class="screen" aria-labelledby="st-title">
+  <h2 id="st-title" class="big-title">Timing self-test</h2>
+  <p class="tagline">Checking the app isn’t lying about your timing</p>
+  <pre id="st-log" role="status" aria-live="polite"></pre>
+  <p class="verdict-big" id="st-verdict"></p>
+  <div class="row">
+    <button id="st-run" class="huge">Run the test</button>
+    <button id="st-back" class="ghost">Back</button>
+  </div>
+</section>
+
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script type="module" src="/src/main.js"></script>

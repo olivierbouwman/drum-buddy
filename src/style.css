@@ -357,6 +357,22 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
   to { transform: translateY(115vh) rotate(540deg); }
 }
 
+/* --------------------------------------------------------- self-test */
+
+#st-log {
+  font: 500 clamp(.8rem, 2.4vw, .95rem)/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted); background: #00000038;
+  border: 1px solid var(--line); border-radius: 12px;
+  padding: 1rem 1.2rem; margin: 0; max-width: 42rem; width: 100%;
+  white-space: pre-wrap; min-height: 8rem; text-align: left;
+}
+.verdict-big {
+  font-family: var(--font-display); font-weight: 700; margin: 0;
+  font-size: clamp(1.3rem, 5vw, 2rem);
+}
+.verdict-big.pass { color: var(--ok); }
+.verdict-big.fail { color: var(--slow); }
+
 /* ------------------------------------------------------------- toast */
 
 #toast {

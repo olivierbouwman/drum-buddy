@@ -114,6 +114,26 @@ up is a celebration; easing back happens silently, because telling a child the a
 she got worse is the opposite of the point. Any of the three levels can still be pinned
 by hand.
 
+## Checking it isn't lying — `?selftest`
+
+Open **`/?selftest`** on the device she practises on, press Play, then Run.
+
+It plays sixteen fake hits through the speaker, each exactly 50 ms after the beat, and
+asserts the app reports +50 ms back. That exercises the entire chain on real hardware —
+speaker, room, microphone, continuous latency calibration, detection, scoring — with no
+human involved.
+
+The arithmetic is exact, which is what makes it a fair test. A real stick struck at time
+T is heard at T + inputLatency, and the app subtracts K = outputLatency + inputLatency,
+reporting T − noteTime − outputLatency: her error as she perceives it, since she hears
+the click late by the output latency too. A synthetic hit scheduled at graph time S
+emerges at S + outputLatency and is heard at S + outputLatency + inputLatency, so after
+the same K the app reports exactly S − noteTime.
+
+**Run this first on any new device, and first if the feedback ever looks wrong.** A
+failure means the numbers she is being shown are wrong. It refuses to certify a pass it
+cannot evidence: if it can't hear the test hits, it says so rather than reporting success.
+
 ## Re-measuring by hand (optional)
 
 Not needed in normal use — the app tunes itself. Reach for this only to investigate a

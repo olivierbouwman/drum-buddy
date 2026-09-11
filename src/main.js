@@ -22,13 +22,16 @@ import { MotionInput } from './motion-detector.js'
 import { TimingModel } from './timing-model.js'
 import { probeOffsetSeconds, refractoryForSpacing } from './dsp-core.js'
 import { AutoTune } from './auto-tune.js'
+import { SelfTest } from './selftest.js'
 import { LiveScorer, summarise, scoreFor, notesPerMinute } from './scoring.js'
 import * as history from './history.js'
 import { assess } from './level-coach.js'
 
 const $ = (id) => document.getElementById(id)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-const debug = new URLSearchParams(location.search).has('debug')
+const params = new URLSearchParams(location.search)
+const debug = params.has('debug') || params.has('selftest')
+const wantSelfTest = params.has('selftest')
 
 const engine = new AudioEngine()
 let clicks = null
@@ -99,6 +102,7 @@ $('btn-play').addEventListener('click', async () => {
     keepAwake()
     show('warmup')
     await setUpSensors()
+    if (wantSelfTest) { showSelfTest(); return }
     await runWarmup()
   } catch (err) {
     toast('Could not start: ' + err.message)
@@ -675,6 +679,39 @@ function armDrumToContinue () {
   })
 
   disarm = () => { clearTimeout(timer); off(); disarm = () => {} }
+}
+
+// -------------------------------------------------------------- self-test
+
+/**
+ * `?selftest` — the only check that runs the whole chain on real hardware.
+ *
+ * Everything else is verified against recordings or synthetic data. This plays fake
+ * hits at a known offset through the actual speaker and asserts the app reports that
+ * offset back. It is what to run on a new device, and what to run first if the feedback
+ * ever looks wrong.
+ */
+function showSelfTest () {
+  show('selftest')
+  const log = $('st-log')
+  const verdict = $('st-verdict')
+  log.textContent = 'Ready. Turn the volume up, put the device where she practises,\nthen press Run.\n'
+  verdict.textContent = ''
+  verdict.className = 'verdict-big'
+
+  $('st-back').onclick = () => { show('start'); $('btn-play').disabled = false }
+  $('st-run').onclick = async () => {
+    $('st-run').disabled = true
+    log.textContent = ''
+    verdict.textContent = ''
+    verdict.className = 'verdict-big'
+    const test = new SelfTest({ engine, clicks, scheduler, timing, input, mic })
+    const result = await test.run((line) => { log.textContent += line + '\n' })
+    verdict.textContent = result.pass ? '✅ PASS' : '❌ FAIL'
+    verdict.className = 'verdict-big ' + (result.pass ? 'pass' : 'fail')
+    $('st-run').disabled = false
+    $('st-run').textContent = 'Run again'
+  }
 }
 
 // ------------------------------------------------------------ difficulty
