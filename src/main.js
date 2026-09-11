@@ -2122,7 +2122,9 @@ async function runTuner () {
  * drum and the room moves, stop and it settles. Reacting to the metronome instead would
  * look the same when she is playing perfectly and lie the rest of the time.
  */
-const DANCERS = ['🥁', '🪘']
+// Just the one drum. A mix of instruments read as clutter rather than as a kit, and the
+// screen has one job: press Play.
+const DANCERS = ['🥁']
 let dancers = []
 
 function makeDancers (count = 18) {
