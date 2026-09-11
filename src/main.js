@@ -2327,7 +2327,7 @@ const DANCERS = ['🥁']
  * Spawned drums also expire on their own once they drift off the top, so in practice the
  * count settles wherever her drumming rate balances against them leaving.
  */
-const MAX_DANCERS = 140
+const MAX_DANCERS = 260
 let dancers = []
 
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -2403,6 +2403,7 @@ function makeDancers (count = 14) {
  * MAX_DANCERS catches the rest.
  */
 let lastPop = 0
+let lastSpawn = 0
 function popDancers () {
   if (reducedMotion()) return
   const host = $('dancers')
@@ -2426,9 +2427,36 @@ function popDancers () {
     }
   }
 
-  const room = MAX_DANCERS - dancers.length
-  const wanted = 1 + (Math.random() < 0.5 ? 1 : 0)
-  for (let n = 0; n < Math.min(wanted, room); n++) makeDancer(host, false)
+  /*
+   * More per stroke the faster she goes.
+   *
+   * A flat one-or-two meant a drum roll looked much like a slow tap, because the visible
+   * result is governed by how fast they leave rather than by how fast they arrive.
+   * Scaling with the gap between strokes makes speed itself the thing that fills the
+   * screen, which is what she is chasing.
+   */
+  const gap = now - lastSpawn
+  lastSpawn = now
+  const fast = gap < 140
+  const wanted = fast ? 3 + ((Math.random() * 2) | 0) : 1 + (Math.random() < 0.5 ? 1 : 0)
+  /*
+   * At the ceiling, retire the oldest rather than ignoring the stroke.
+   *
+   * Simply refusing would mean that once the screen filled — four seconds of hard
+   * drumming — every further hit did nothing, which is exactly the deadness this was
+   * meant to fix, just arriving later. Recycling keeps the count bounded AND keeps every
+   * stroke answered. The oldest spawned drum is the one nearest the top and already
+   * faded, so it is the least missed.
+   */
+  for (let n = 0; n < wanted; n++) {
+    if (dancers.length >= MAX_DANCERS) {
+      const oldest = dancers.findIndex((d) => d.classList.contains('spawned'))
+      if (oldest < 0) break                     // only ambient left; nothing to retire
+      dancers[oldest].remove()
+      dancers.splice(oldest, 1)
+    }
+    makeDancer(host, false)
+  }
 }
 
 makeDancers()
@@ -2446,8 +2474,20 @@ makeDancers()
  * It asks one question — did the tablet just get knocked — and it does not care when.
  */
 function watchIdleDrumming () {
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  if (reducedMotion()) return
   if (!window.DeviceMotionEvent) return
+
+  /*
+   * Deliberately far more eager than the real detector, for a reason worth stating: on
+   * this screen a false positive costs one extra drum. During an exercise it corrupts
+   * her score. The two jobs deserve opposite settings, and this one should err towards
+   * seeing everything.
+   *
+   * 55 ms between hits — about eighteen a second, past which a ~50 Hz accelerometer has
+   * fewer than three samples per stroke and genuinely cannot tell them apart. It was
+   * 120 ms, which capped the fun at eight a second for no reason that applies here.
+   */
+  const REFRACTORY_MS = 55
 
   const recent = []
   let last = 0
@@ -2463,18 +2503,26 @@ function watchIdleDrumming () {
     if (!a) return
     const mag = Math.sqrt((a.x || 0) ** 2 + (a.y || 0) ** 2 + (a.z || 0) ** 2)
 
-    // A rolling baseline rather than a fixed threshold, because resting magnitude
-    // depends on how the tablet is lying and this device reports exact zeros at rest.
     recent.push(mag)
     if (recent.length > 60) recent.shift()
     if (recent.length < 20) return
     const sorted = [...recent].sort((x, y) => x - y)
-    const mid = sorted[sorted.length >> 1]
-    const high = sorted[Math.floor(sorted.length * 0.9)]
-    const threshold = mid + Math.max((high - mid) * 2, MOTION.minThreshold)
+
+    /*
+     * Rest is the 20th percentile, not the median.
+     *
+     * The median of a 1.2-second window during fast drumming is mostly drumming, so the
+     * baseline climbed as she played and the threshold climbed with it — the harder she
+     * went, the less it saw. A drum-reactive background that switches itself off under
+     * drumming is precisely backwards. A low percentile still describes the quiet
+     * between strokes however busy the window gets.
+     */
+    const rest = sorted[Math.floor(sorted.length * 0.2)]
+    const loud = sorted[Math.floor(sorted.length * 0.95)]
+    const threshold = rest + Math.max((loud - rest) * 0.45, MOTION.minThreshold * 0.5)
 
     const now = performance.now()
-    if (mag > threshold && now - last > 120) {
+    if (mag > threshold && now - last > REFRACTORY_MS) {
       last = now
       popDancers()
     }
