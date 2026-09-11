@@ -173,6 +173,21 @@ $('btn-play').addEventListener('click', async () => {
       if (st !== 'running') toast('Tap anywhere to keep going')
     })
 
+    /*
+     * Follow the device if it changes its mind mid-session.
+     *
+     * Both of these are functions of the reported output latency, and both were computed
+     * once and left. The correction decides where her hits land relative to the grid; the
+     * nudge decides where the click lands relative to the same grid. If the figure moves
+     * and only the visuals follow it, the three stop agreeing part-way through a run —
+     * which is felt as the sync drifting during a practice.
+     */
+    engine.onLatencyChange(() => {
+      applyMotionTiming()
+      if (scheduler) scheduler.nudgeS = nudgeForNow()
+      if (debug) console.warn('[drum-buddy] output latency moved to', Math.round(engine.outputLatency * 1000), 'ms')
+    })
+
     setInterval(watchForSilentMic, 1000)
 
     keepAwake()
@@ -1058,6 +1073,7 @@ function startExercise (index, step = null) {
   state.notes = []
   state.detections = []
   state.motionTrace = []
+  state.clockTrace = []
 
   show('play')
   $('ex-name').textContent = ex.name
@@ -1178,6 +1194,34 @@ function startExercise (index, step = null) {
     }, 100)
   }
 
+  /*
+   * Watch the two clocks against each other for the length of the run.
+   *
+   * "Perfect and then drifting" is a slope, not an offset, and every fix so far has been
+   * an offset. The metronome is scheduled in AudioContext time and is exact there; the
+   * visuals and the hit timestamps are both derived from performance.now(). If those two
+   * clocks run at even slightly different rates — and an audio DAC's real sample rate can
+   * be hundreds of parts per million off nominal — everything derived from one slides
+   * steadily against everything derived from the other, which is precisely what a
+   * metronome that starts right and goes wrong feels like.
+   *
+   * The engine currently assumes that slope is exactly 1 and estimates only the offset.
+   * That assumption is written in a comment in audio-engine.js and has never been
+   * checked, so this records what is needed to check it.
+   */
+  clearInterval(clockTraceTimer)
+  if (diagnosticsActive) {
+    clockTraceTimer = setInterval(() => {
+      if (!scheduler || !scheduler.running) return
+      state.clockTrace.push([
+        +engine.now.toFixed(4),               // AudioContext time
+        +performance.now().toFixed(2),        // system time
+        +(engine.clockOffset ?? 0).toFixed(2),
+        +(engine._fineOffset ?? 0).toFixed(2),
+      ])
+    }, 250)
+  }
+
   // The lanes need every note up front so they can fall into view ahead of time; the
   // scheduler works the whole exercise out when it starts.
   // Speaker test: thump instead of tick, and say so on screen so a run cannot be
@@ -1231,9 +1275,11 @@ function nudgeTempo (d) {
 }
 
 let progressTimer = null
+let clockTraceTimer = null
 
 function stopPlay () {
   clearInterval(progressTimer)
+  clearInterval(clockTraceTimer)
   inSilentWindow = false
   scheduler.stop()
   visuals.stop()
@@ -1399,6 +1445,7 @@ async function uploadSession () {
     notes: state.notes.map((n) => ({ t: +n.time.toFixed(4), hand: n.hand })),
     detections: state.detections,
     motion: state.motionTrace,
+    clocks: state.clockTrace,
     stats: state.lastStats,
     tuning: autoTune ? autoTune.report : null,
     snapshot: snapshot(),
@@ -1957,6 +2004,9 @@ function snapshot () {
       tapKept,
       padDelayHistoryMs,
       outputLatencyMs: Math.round((engine.outputLatency || 0) * 1000),
+      // Must be 0. Anything else and the device moved the goalposts mid-session.
+      latencyMoves: engine.latencyMoves || 0,
+      latencySeen: engine.latencySeen || [],
       timestampTrusted: engine._timestampUsable,
       fullscreen: fullscreenNote,
       // Chrome rejects with a bare TypeError both when the gesture is stale and when

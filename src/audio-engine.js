@@ -54,6 +54,9 @@ export class AudioEngine {
 
   onStateChange (fn) { this._onStateChange = fn }
 
+  /** Told when the device changes its mind about how long the speaker takes. */
+  onLatencyChange (fn) { this._onLatencyChange = fn }
+
   get sampleRate () { return this.ctx ? this.ctx.sampleRate : 0 }
   get now () { return this.ctx ? this.ctx.currentTime : 0 }
 
@@ -125,6 +128,28 @@ export class AudioEngine {
    */
   sampleClock () {
     if (!this.ctx) return
+
+    /*
+     * Re-read the latency. It is not a constant.
+     *
+     * This was taken once at startup and never looked at again. Android changes it
+     * during a session — the audio path warms up, another app takes and releases focus,
+     * the device drops into a low-power mode and the buffer size moves with it. Every
+     * time it did, the app carried on drawing notes to cross the line at the old figure
+     * while the speaker used the new one, and sound and picture pulled apart mid-run.
+     * Reported as the sync drifting inside a single practice, which is exactly what an
+     * unread changing input looks like.
+     */
+    const reported = this.ctx.outputLatency || (this.ctx.baseLatency || 0.01) * 2 || 0.02
+    if (Math.abs(reported - this.outputLatency) > 0.002) {
+      this.latencyMoves = (this.latencyMoves || 0) + 1
+      this.latencySeen = this.latencySeen || []
+      if (this.latencySeen.length < 40) this.latencySeen.push(Math.round(reported * 1000))
+      this.outputLatency = reported
+      if (this._onLatencyChange) this._onLatencyChange(reported)
+    }
+    this.baseLatency = this.ctx.baseLatency || 0
+
     let offset
     if (this._timestampUsable) {
       const ts = this.ctx.getOutputTimestamp()
