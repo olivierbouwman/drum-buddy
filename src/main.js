@@ -9,7 +9,7 @@
  * interface without touching anything in here.
  */
 
-import { TEMPO, BAND, DRUM_NAV, SCHEDULER, FUSION, CALIBRATION,
+import { TEMPO, BAND, DRUM_NAV, SCHEDULER, FUSION, CALIBRATION, DETECTOR,
   LEVELS, LEVEL_STORAGE_KEY, applyLevel } from './config.js'
 import { EXERCISES } from './exercises.js'
 import { AudioEngine } from './audio-engine.js'
@@ -21,10 +21,13 @@ import { MicInput } from './onset-detector.js'
 import { MotionInput } from './motion-detector.js'
 import { TimingModel } from './timing-model.js'
 import { probeOffsetSeconds, refractoryForSpacing } from './dsp-core.js'
+import { AutoTune } from './auto-tune.js'
 import { LiveScorer, summarise, scoreFor, notesPerMinute } from './scoring.js'
 import * as history from './history.js'
+import { assess } from './level-coach.js'
 
 const $ = (id) => document.getElementById(id)
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const debug = new URLSearchParams(location.search).has('debug')
 
 const engine = new AudioEngine()
@@ -35,6 +38,13 @@ let input = null
 let mic = null
 let motion = null
 let timing = null
+let autoTune = null
+/** True only while the metronome is playing and she is meant not to be: the count-in. */
+let inSilentWindow = false
+/** When the last hit was heard, so contaminated samples can be thrown away. */
+let lastHitAt = -1e9
+/** When the last click arrived, so "room" samples avoid the click and its tail. */
+let lastClickAt = -1e9
 
 const state = {
   bpm: TEMPO.default,
@@ -89,7 +99,7 @@ $('btn-play').addEventListener('click', async () => {
     keepAwake()
     show('warmup')
     await setUpSensors()
-    runWarmup()
+    await runWarmup()
   } catch (err) {
     toast('Could not start: ' + err.message)
     $('btn-play').disabled = false
@@ -113,14 +123,31 @@ async function setUpSensors () {
   ])
 
   if (micOk) {
-    mic.onLevel((peak) => {
+    autoTune = new AutoTune(DETECTOR.bands)
+    mic.onLevel((peak, levels) => {
       const el = $('warmup-level') || $('play-level')
       if (el) el.style.width = Math.min(100, peak * 160) + '%'
       const p = $('play-level')
       if (p) p.style.width = Math.min(100, peak * 160) + '%'
+
+      // The room itself, sampled only in the gaps: far enough after a click that its
+      // tail has died away, and nowhere near a stick.
+      if (!levels || !inSilentWindow) return
+      const now = engine.now
+      if (now - lastClickAt > 0.18 && now - lastHitAt > 0.4) autoTune.sampleRoom(levels)
     })
-    // Every click the app plays is a fresh, free latency measurement.
-    mic.onClick((t) => timing.observeClick(t))
+    // Every click the app plays is a fresh, free measurement of two things: how long
+    // the round trip takes, and — when she is definitely not playing — what the
+    // metronome bleeding back in actually looks like across the filterbank.
+    mic.onClick((t, level, levels) => {
+      timing.observeClick(t)
+      lastClickAt = t
+      // Only trust a bleed sample if she wasn't playing anywhere near it. Telling an
+      // eight-year-old to hold still during the count-in would mostly not work; quietly
+      // discarding the spoiled samples does.
+      const clean = inSilentWindow && Math.abs(t - lastHitAt) > 0.15
+      if (clean && levels) autoTune.sampleBleed(levels)
+    })
   }
 
   if (micOk || motionOk) {
@@ -195,35 +222,73 @@ function storeLatency () {
 // ------------------------------------------------------------------ warm-up
 
 /**
- * Four hits. Right now this just confirms input works and lets her get a feel for it;
- * once the mic detector lands, these same four hits set sensitivity and pick the
- * sensor. Either way she just sees the band waking up.
+ * The warm-up does three real jobs, and looks like the band waking up.
+ *
+ * First a handful of soft clicks with nobody drumming: that measures the round-trip
+ * latency AND what the metronome bleeding back through the microphone looks like across
+ * the filterbank. Then four hits from her, which measures what her drum looks like. The
+ * difference between those two is what tells the app which frequencies to listen to on
+ * this device, in this room — the thing that used to need an offline recording session.
+ *
+ * She just sees the animals wake up.
  */
-function runWarmup () {
+async function runWarmup () {
   const dots = $('warmup-dots')
-  dots.innerHTML = ''
-  for (let i = 0; i < 4; i++) dots.append(document.createElement('span'))
   const members = [...$('warmup-band').children]
+  dots.innerHTML = ''
 
-  $('warmup-msg').textContent = 'Hit your pad 4 times to wake the band!'
+  // --- listening phase: metronome only, nobody playing ---
+  $('warmup-msg').textContent = 'Shhh… listening to your room 🤫'
+  inSilentWindow = true
+  const gap = 0.42
+  let t = engine.now + 0.25
+  for (let i = 0; i < 7; i++) {
+    clicks.playAt(i === 0 ? 'accent' : 'beat', t)
+    timing.expectClick(t)
+    const when = Math.max(0, engine.audibleAt(t) - performance.now())
+    setTimeout(() => {
+      const m = members[i % members.length]
+      m.classList.remove('sleepy')
+      m.classList.add('bounce')
+      setTimeout(() => m.classList.remove('bounce'), 200)
+    }, when)
+    t += gap
+  }
+  await sleep((t - engine.now) * 1000 + 150)
+  inSilentWindow = false
+
+  // --- her turn ---
+  for (let i = 0; i < 4; i++) dots.append(document.createElement('span'))
+  $('warmup-msg').textContent = 'Now hit your pad 4 times!'
+
   let got = 0
-
   const off = onHits((hit) => {
+    lastHitAt = hit.time
     if (got >= 4) return
     dots.children[got].classList.add('got')
     const m = members[got % members.length]
-    m.classList.remove('sleepy')
     m.classList.add('bounce')
     setTimeout(() => m.classList.remove('bounce'), 200)
     got++
     if (got === 4) {
       off()
       $('warmup-msg').textContent = 'The whole band is up! 🎉'
+      applyAutoTune()
       setTimeout(() => startExercise(state.exerciseIndex), 700)
     }
   })
 
-  $('btn-skip-warmup').onclick = () => { off(); startExercise(state.exerciseIndex) }
+  // Never strand her here: if the pad is too quiet or the mic is blocked, go anyway.
+  const bail = setTimeout(() => {
+    if (got < 4) {
+      off()
+      if (got === 0) toast('I couldn’t hear your drum — you can tap the screen too', 5000)
+      applyAutoTune()
+      startExercise(state.exerciseIndex)
+    }
+  }, 15000)
+
+  $('btn-skip-warmup').onclick = () => { clearTimeout(bail); off(); applyAutoTune(); startExercise(state.exerciseIndex) }
 }
 
 /** Subscribe to hits; returns an unsubscribe. */
@@ -272,6 +337,10 @@ function startExercise (index) {
     // when it actually came back, and the gap keeps K current.
     timing.expectClick(beat.time)
 
+    // Bleed can only be measured honestly while she is definitely not playing. The
+    // count-in guarantees exactly that, at the start of every single exercise — so the
+    // app keeps re-learning this room for free and never needs a setup step.
+    inSilentWindow = beat.countIn
     if (!beat.countIn) return
     // Show the count-in digit when the click is actually audible, not when it was
     // scheduled — those are up to 150 ms apart.
@@ -296,6 +365,8 @@ function startExercise (index) {
     // else. See the invariant at the top of timing-model.js.
     const corrected = { ...hit, time: timing.correct(hit.time) }
     state.hits.push(corrected)
+    lastHitAt = hit.time
+    if (autoTune && hit.levels) autoTune.sampleHit(hit.levels)
 
     if (!timing.usable) {
       // Refuse to grade until the latency is known. Reporting timing against an
@@ -404,6 +475,7 @@ let calibWatch = null
 
 function stopPlay () {
   clearTimeout(calibWatch)
+  inSilentWindow = false
   scheduler.stop()
   visuals.stop()
   if (offHits) { offHits(); offHits = null }
@@ -422,6 +494,7 @@ function abortToStart () {
 function finishExercise () {
   stopPlay()
   storeLatency()
+  applyAutoTune()
   state.scorer.finish()
   const beatS = 60 / state.bpm
   const stats = summarise(state.notes, state.hits, beatS)
@@ -462,6 +535,12 @@ function finishExercise () {
     add('latency (ms)', timing.latencyMs === null ? 'unmeasured' : Math.round(timing.latencyMs))
     add('latency drift', Math.round(timing.spreadMs * 10) / 10 + ' ms')
     add('timing from', input.timingSource || 'tap')
+    if (autoTune && autoTune.ready) {
+      add('bands in use', autoTune.report.bands.filter((b) => b.on).map((b) => b.hz).join(' '))
+      add('worst margin', Math.min(...autoTune.report.bands.filter((b) => b.on)
+        .map((b) => b.marginDb)) + ' dB')
+      if (autoTune.report.problem) add('tuning', autoTune.report.problem)
+    }
     if (input.corroborationRate !== null && input.corroborationRate !== undefined) {
       add('pad confirmed', Math.round(input.corroborationRate * 100) + '%')
     }
@@ -476,18 +555,30 @@ function finishExercise () {
   const score = scoreFor(stats, notesPerMinute(EXERCISES[state.exerciseIndex], state.bpm))
   renderScore(score, EXERCISES[state.exerciseIndex].id)
 
-  // Offer the next level only when she is clearly beating this one, and only ever as
-  // an invitation. Tightening automatically would make identical playing start scoring
-  // worse for no reason she could see.
-  const idx = LEVELS.indexOf(level)
-  if (stats.enough && idx < LEVELS.length - 1 && stats.spreadMs < level.steady[0] * 0.8) {
-    toast(`You're ready for "${LEVELS[idx + 1].name}" when you want it!`, 5000)
-  }
+  // Let the coach decide whether the app should get fussier or kinder from here.
+  if (stats.enough) maybeChangeLevel()
 
   // Screen-reader summary: the one place a full sentence beats emoji.
   $('done-badge').setAttribute('role', 'status')
 
   armDrumToContinue()
+}
+
+/**
+ * Push what the learner has worked out down to the detector.
+ *
+ * Applied between exercises rather than mid-attempt: switching bands changes which
+ * hits get seen, and doing that halfway through would make one attempt incomparable
+ * with itself.
+ */
+function applyAutoTune () {
+  if (!autoTune || !mic || !mic.available) return
+  const decision = autoTune.decide()
+  if (!decision) return
+  if (autoTune.report.noisyRoom) toast('It’s a bit noisy in here — I’ll do my best', 4000)
+  if (!decision.changed) return
+  mic.tune(decision)
+  if (debug) console.log('[drum-buddy] retuned:', autoTune.report)
 }
 
 /**
@@ -502,7 +593,13 @@ function renderScore (score, exerciseId) {
   if (score === null) { box.hidden = true; return }
   box.hidden = false
 
-  const h = history.record({ score, exercise: exerciseId, bpm: state.bpm })
+  const h = history.record({
+    score,
+    exercise: exerciseId,
+    bpm: state.bpm,
+    spreadMs: state.lastStats ? state.lastStats.spreadMs : undefined,
+    level: level.id,
+  })
 
   $('score-value').textContent = score
 
@@ -594,30 +691,76 @@ function armDrumToContinue () {
  * how she did — scores still reset every session.
  */
 let level = LEVELS[0]
+let autoLevel = true
 
 function loadLevel () {
   try {
     const id = localStorage.getItem(LEVEL_STORAGE_KEY)
+    autoLevel = id === null || id === 'auto'
     const found = LEVELS.find((l) => l.id === id)
     if (found) level = found
+    if (autoLevel) {
+      const savedAuto = LEVELS.find((l) => l.id === localStorage.getItem(LEVEL_STORAGE_KEY + '.auto'))
+      if (savedAuto) level = savedAuto
+    }
   } catch { /* storage unavailable; the default is fine */ }
   applyLevel(level)
+}
+
+function setLevel (l, { announce } = {}) {
+  level = l
+  applyLevel(level)
+  try {
+    if (autoLevel) localStorage.setItem(LEVEL_STORAGE_KEY + '.auto', l.id)
+  } catch {}
+  renderLevels()
+  if (announce) toast(announce, 4500)
+}
+
+/**
+ * After each attempt, decide whether the app should get fussier or kinder.
+ * Promotion is a celebration; easing back happens quietly, because telling a child the
+ * app thinks she got worse is the opposite of the point.
+ */
+function maybeChangeLevel () {
+  if (!autoLevel) return
+  const verdict = assess(history.recentSpreads(5), LEVELS.indexOf(level),
+    history.attemptsAtLevel(level.id), LEVELS)
+  if (debug) console.log('[drum-buddy] level:', verdict.direction, verdict.reason)
+  if (verdict.direction === 'stay') return
+  const next = LEVELS[verdict.index]
+  setLevel(next, {
+    announce: verdict.direction === 'up'
+      ? `You levelled up! Now on "${next.name}" ⭐`
+      : undefined,
+  })
 }
 
 function renderLevels () {
   const host = $('level-buttons')
   host.innerHTML = ''
+
+  const auto = document.createElement('button')
+  auto.type = 'button'
+  auto.textContent = autoLevel ? `Auto · ${level.name}` : 'Auto'
+  auto.setAttribute('aria-pressed', String(autoLevel))
+  auto.addEventListener('click', () => {
+    autoLevel = true
+    try { localStorage.setItem(LEVEL_STORAGE_KEY, 'auto') } catch {}
+    renderLevels()
+    toast('I’ll pick the level as you improve', 2500)
+  })
+  host.append(auto)
+
   for (const l of LEVELS) {
     const b = document.createElement('button')
     b.type = 'button'
     b.textContent = l.name
-    b.setAttribute('aria-pressed', String(l.id === level.id))
+    b.setAttribute('aria-pressed', String(!autoLevel && l.id === level.id))
     b.addEventListener('click', () => {
-      level = l
-      applyLevel(level)
+      autoLevel = false
       try { localStorage.setItem(LEVEL_STORAGE_KEY, l.id) } catch {}
-      renderLevels()
-      toast(`Timing check: ${l.name}`, 1800)
+      setLevel(l, { announce: `Timing check: ${l.name}` })
     })
     host.append(b)
   }

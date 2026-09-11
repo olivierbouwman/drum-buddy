@@ -71,6 +71,17 @@ export class OnsetDetector {
     // Noise floor creeps up at +6 dB/s and snaps down instantly.
     this.floorRise = Math.pow(10, 6 / 20 / rate)
 
+    // Which bands currently count toward a trigger. Learned per device: a band where
+    // the metronome bleed is as loud as her hits is worse than useless, and which bands
+    // those are depends entirely on the speaker, the room and the pad.
+    this.enabled = new Uint8Array(this.n).fill(1)
+    this.enabledCount = this.n
+
+    // Absolute level gate, learned from her actual hits. The ratio test alone fires on
+    // ANY transient however quiet — that is what let a click 30 dB below her softest
+    // hit trigger the detector. This is the floor that says "too quiet to be a stick".
+    this.minLevel = 0
+
     this.agreeSamples = Math.max(1, Math.round((cfg.agreementMs / 1000) * rate))
     this.frame = 0
     this.lastOnset = -1e9
@@ -82,11 +93,42 @@ export class OnsetDetector {
     this.histPos = 0
 
     this.refractorySamples = Math.round((cfg.refractoryMs / 1000) * rate)
+
+    // An onset is reported the instant the attack crosses threshold — correct for
+    // TIMING, but the envelope is still climbing, so per-band levels read there are far
+    // below the hit's real spectrum. The bleed, sampled at the click's envelope peak, is
+    // at its maximum. Comparing the two directly understated every margin by 10-20 dB.
+    // So hold the onset briefly and report the peak levels instead. The timestamp is
+    // already fixed and travels in the payload, so the delay costs nothing.
+    this.levelWindow = Math.round(0.008 * rate)
+    this.held = null
   }
 
   /** Refractory can be tightened per exercise; see refractoryForSpacing(). */
   setRefractoryMs (ms) {
     this.refractorySamples = Math.round((ms / 1000) * this.rate)
+  }
+
+  /**
+   * Turn bands on and off as the app learns which ones separate her hits from the
+   * bleed on THIS device. Never leaves fewer than two enabled: a detector down to one
+   * band has no agreement test left and will fire on anything.
+   */
+  setEnabledBands (mask) {
+    let on = 0
+    for (let b = 0; b < this.n; b++) {
+      this.enabled[b] = mask[b] ? 1 : 0
+      on += this.enabled[b]
+    }
+    if (on < 2) { this.enabled.fill(1); on = this.n }
+    this.enabledCount = on
+  }
+
+  setMinLevel (v) { this.minLevel = Math.max(0, v || 0) }
+
+  /** How many enabled bands must agree. Scaled so the rule survives disabling bands. */
+  get needAgree () {
+    return Math.max(2, Math.min(this.enabledCount, Math.round(this.enabledCount * 0.67)))
   }
 
   /**
@@ -123,6 +165,7 @@ export class OnsetDetector {
         if (this.fast[b] < this.floor[b]) this.floor[b] = this.fast[b]
         else this.floor[b] *= this.floorRise
 
+        if (!this.enabled[b]) continue
         sum += this.fast[b]
 
         const overSlow = this.fast[b] > cfg.triggerOverSlow * this.slow[b]
@@ -135,7 +178,8 @@ export class OnsetDetector {
       this.hist[this.histPos] = sum
       this.histPos = (this.histPos + 1) % this.histLen
 
-      if (agree >= this.needed && this.frame - this.lastOnset >= this.refractorySamples) {
+      if (agree >= this.needAgree && sum > this.minLevel &&
+          this.frame - this.lastOnset >= this.refractorySamples) {
         const riseMs = this._riseTime(sum)
         // Speech sibilants ('s', 't' from someone talking) rise over 10 ms or more;
         // a stick on rubber is under 2 ms. Cheapest useful discriminator there is.
@@ -147,16 +191,43 @@ export class OnsetDetector {
             this.frame - this.lastOnset < (cfg.bounceRejectMs / 1000) * this.rate &&
             quieterThanLast <= -cfg.bounceRejectDb
           if (!isBounce) {
-            out.push({ frame: this.frame, strength: sum, bands: agree, riseMs })
+            if (this.held) out.push(this._release())
+            this.held = {
+              frame: this.frame,
+              strength: sum,
+              bands: agree,
+              riseMs,
+              levels: Array.from(this.fast),
+              until: this.frame + this.levelWindow,
+            }
             this.lastOnset = this.frame
             this.lastPeak = sum
           }
         }
       }
+      // While an onset is held, keep the highest level seen in each band.
+      if (this.held) {
+        for (let b = 0; b < this.n; b++) {
+          if (this.fast[b] > this.held.levels[b]) this.held.levels[b] = this.fast[b]
+        }
+        if (sum > this.held.strength) this.held.strength = sum
+        if (this.frame >= this.held.until) out.push(this._release())
+      }
+
       this.frame++
     }
     return out
   }
+
+  _release () {
+    const h = this.held
+    this.held = null
+    this.lastPeak = h.strength
+    return { frame: h.frame, strength: h.strength, bands: h.bands, riseMs: h.riseMs, levels: h.levels }
+  }
+
+  /** Current per-band envelope, for sampling the bleed at a known moment. */
+  snapshot () { return Array.from(this.fast) }
 
   /** How long ago the summed envelope was at 20% of its current value, in ms. */
   _riseTime (now) {

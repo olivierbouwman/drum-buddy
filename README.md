@@ -76,43 +76,72 @@ For an iPad you need HTTPS — both `getUserMedia` and `DeviceMotionEvent` requi
 secure context, and `localhost` doesn't apply. Either open the deployed URL above, or
 run `npm run dev:lan` and accept the self-signed certificate once.
 
-## Measuring the real pad (Phase 0)
+## It tunes itself
 
-Detection thresholds should come from the actual pad, sticks, speakers and room rather
-than from guesses — in particular whether her stick attack is audible in a frequency
-band the metronome click isn't, and whether the accelerometer feels hits through the
-rubber at all.
+There is no setup step. The app works out, on its own, which frequencies separate her
+drum from the metronome bleeding out of *this* speaker in *this* room — the thing that
+originally took an offline recording session.
 
-1. Open `/tools/record.html` (on the device you'll practise on).
-2. Do the five short takes it walks you through — about three minutes.
+It can do that because it already has everything the recording provided:
+
+| What it needs | Where it gets it, for free |
+| --- | --- |
+| Round-trip latency | Its own click, heard back, every beat |
+| The metronome's spectrum | The same click — sampled across the filterbank on arrival |
+| The room's own noise | The gaps between count-in clicks |
+| Her drum's spectrum | Every hit carries its per-band levels |
+| Which bands to trust | The margin between those |
+
+The four-beat count-in is the key: the metronome is playing and she is meant not to be,
+at the start of every single exercise, forever. Samples spoiled by her playing anyway
+are simply discarded — telling an eight-year-old to hold still mostly would not work.
+
+Two guardrails. Bleed is measured at a high percentile and hits at a low one, so the
+margin is the pessimistic case rather than the flattering average. And the level gate
+can never rise above her softest hits: going quietly deaf would look exactly like the
+app ignoring her, which is worse than the occasional false trigger.
+
+Verified in `test/autotune.test.mjs` by handing the learner a candidate list that
+deliberately *includes* the bands the click lives in, and replaying real audio: it drops
+them unaided and reaches zero false triggers from the metronome.
+
+### Difficulty looks after itself too
+
+Timing windows sit on an **Auto** setting by default. After each attempt the app looks at
+the median of her recent steadiness and moves the level when she has clearly outgrown it,
+with hysteresis so it cannot flap and so one lucky attempt cannot promote her. Levelling
+up is a celebration; easing back happens silently, because telling a child the app thinks
+she got worse is the opposite of the point. Any of the three levels can still be pinned
+by hand.
+
+## Re-measuring by hand (optional)
+
+Not needed in normal use — the app tunes itself. Reach for this only to investigate a
+device where detection misbehaves, or to regenerate the test fixtures.
+
+1. Open `/tools/record.html` on the device in question.
+2. Do the five short takes it walks you through, about three minutes.
 3. Move the downloaded files into `tools/recordings/`.
-4. `npm run analyse`
+4. `npm run analyse` for the spectra, `node tools/tune.mjs --sweep` for detector settings.
 
-It prints an energy-per-band table, recommends a detection band, and says plainly
-whether the microphone route, the accelerometer route, or both are viable.
-
-`node tools/make-fake-recordings.mjs` writes synthetic takes so the analyser can be
-exercised without a drum pad.
+`node tools/make-fake-recordings.mjs` writes synthetic takes so the tools can be
+exercised without a drum pad. With real recordings present, `npm test` additionally
+replays them and asserts the calibration and the band learner still behave.
 
 ### What the first measurement found (2026-09-10, Android Chrome)
 
-Three things that guesswork would have got wrong:
+Three things guesswork would have got wrong:
 
 - **One biquad per band is not enough.** A single 2nd-order bandpass rolls off at only
   6 dB/octave, leaving the 900 Hz metronome click barely 13 dB down inside the 2.5 kHz
   band — so it triggered the detector as readily as a real drum hit. An FFT view of the
   same bands looks perfectly clean and hides this completely. Cascading three biquads
-  took false triggers from the metronome from 6 to **0**, with real hits preserved.
-- **Round-trip latency is 353 ms** — very high — but with a spread of **0.0 ms** across
-  ten clicks. The original plan refused to score above 250 ms, on the theory that high
-  latency means Bluetooth and therefore drift. That rule would have locked this device
-  out for nothing: a large constant subtracts as cleanly as a small one. The refusal is
-  now based on whether the number holds still, not how big it is.
+  took false triggers from the metronome from 6 to **0**.
+- **Round-trip latency is 353 ms** — and drifted to 394 ms ninety seconds later in the
+  same session, each rock-steady within itself. That is why calibration is continuous.
 - **The accelerometer is a confirmation sensor, not a timing source.** It feels hits
-  clearly (21 dB spike-to-rest at 60 Hz), but its timestamps scatter by ~38 ms against
-  the microphone — far worse than the 4.8 ms the sample rate implies, because
-  `DeviceMotionEvent` delivery waits on the main thread. So it answers "did a hit
-  happen" (immune to bleed and room noise) while the microphone answers "exactly when".
+  clearly (21 dB spike-to-rest at 60 Hz) but its timestamps scatter ~38 ms against the
+  microphone, because `DeviceMotionEvent` delivery waits on the main thread.
 
 ## How it's put together
 

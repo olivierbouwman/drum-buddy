@@ -30,6 +30,12 @@ class DrumOnsetProcessor extends AudioWorkletProcessor {
       if (m.type === 'refractory') this.det.setRefractoryMs(m.ms)
       else if (m.type === 'listen') this.listening = m.on
       else if (m.type === 'probe') this.probing = m.on
+      else if (m.type === 'tune') {
+        // The app has learned which bands separate her drum from the bleed on this
+        // device. Applied live; it changes only WHETHER a hit is seen, not when.
+        if (m.mask) this.det.setEnabledBands(m.mask)
+        if (typeof m.minLevel === 'number') this.det.setMinLevel(m.minLevel)
+      }
     }
     this.port.postMessage({ type: 'ready', sampleRate })
   }
@@ -49,6 +55,7 @@ class DrumOnsetProcessor extends AudioWorkletProcessor {
           time: h.frame / sampleRate,
           strength: h.strength,
           bands: h.bands,
+          levels: h.levels,
         })
       }
     }
@@ -56,7 +63,14 @@ class DrumOnsetProcessor extends AudioWorkletProcessor {
     if (this.probing) {
       const clicks = this.probe.process(ch, currentFrame)
       for (const c of clicks) {
-        this.port.postMessage({ type: 'click', time: c.frame / sampleRate, level: c.level })
+        // Snapshot the filterbank at the click's arrival: this is the bleed spectrum,
+        // measured on the real device instead of guessed at offline.
+        this.port.postMessage({
+          type: 'click',
+          time: c.frame / sampleRate,
+          level: c.level,
+          levels: this.det.snapshot(),
+        })
       }
     }
 
@@ -66,7 +80,14 @@ class DrumOnsetProcessor extends AudioWorkletProcessor {
     }
     this.meterCount += ch.length
     if (this.meterCount >= this.meterEvery) {
-      this.port.postMessage({ type: 'level', peak: this.meterPeak })
+      // Band levels ride along with the meter. Sampled by the app during the gaps
+      // between count-in clicks, this measures the ROOM — the floor everything else
+      // has to stand above.
+      this.port.postMessage({
+        type: 'level',
+        peak: this.meterPeak,
+        levels: this.det.snapshot(),
+      })
       this.meterPeak = 0
       this.meterCount = 0
     }

@@ -62,6 +62,9 @@ var OnsetDetector = class {
 		this.aFast = poleFor(cfg.fastTauMs, rate);
 		this.aSlow = poleFor(cfg.slowTauMs, rate);
 		this.floorRise = Math.pow(10, 6 / 20 / rate);
+		this.enabled = new Uint8Array(this.n).fill(1);
+		this.enabledCount = this.n;
+		this.minLevel = 0;
 		this.agreeSamples = Math.max(1, Math.round(cfg.agreementMs / 1e3 * rate));
 		this.frame = 0;
 		this.lastOnset = -1e9;
@@ -70,10 +73,36 @@ var OnsetDetector = class {
 		this.hist = new Float64Array(this.histLen);
 		this.histPos = 0;
 		this.refractorySamples = Math.round(cfg.refractoryMs / 1e3 * rate);
+		this.levelWindow = Math.round(.008 * rate);
+		this.held = null;
 	}
 	/** Refractory can be tightened per exercise; see refractoryForSpacing(). */
 	setRefractoryMs(ms) {
 		this.refractorySamples = Math.round(ms / 1e3 * this.rate);
+	}
+	/**
+	* Turn bands on and off as the app learns which ones separate her hits from the
+	* bleed on THIS device. Never leaves fewer than two enabled: a detector down to one
+	* band has no agreement test left and will fire on anything.
+	*/
+	setEnabledBands(mask) {
+		let on = 0;
+		for (let b = 0; b < this.n; b++) {
+			this.enabled[b] = mask[b] ? 1 : 0;
+			on += this.enabled[b];
+		}
+		if (on < 2) {
+			this.enabled.fill(1);
+			on = this.n;
+		}
+		this.enabledCount = on;
+	}
+	setMinLevel(v) {
+		this.minLevel = Math.max(0, v || 0);
+	}
+	/** How many enabled bands must agree. Scaled so the rule survives disabling bands. */
+	get needAgree() {
+		return Math.max(2, Math.min(this.enabledCount, Math.round(this.enabledCount * .67)));
 	}
 	/**
 	* @param {Float32Array} block
@@ -105,6 +134,7 @@ var OnsetDetector = class {
 				this.slow[b] = this.aSlow * this.slow[b] + (1 - this.aSlow) * mag;
 				if (this.fast[b] < this.floor[b]) this.floor[b] = this.fast[b];
 				else this.floor[b] *= this.floorRise;
+				if (!this.enabled[b]) continue;
 				sum += this.fast[b];
 				const overSlow = this.fast[b] > cfg.triggerOverSlow * this.slow[b];
 				const overFloor = this.fast[b] > cfg.triggerOverFloor * this.floor[b];
@@ -113,25 +143,49 @@ var OnsetDetector = class {
 			}
 			this.hist[this.histPos] = sum;
 			this.histPos = (this.histPos + 1) % this.histLen;
-			if (agree >= this.needed && this.frame - this.lastOnset >= this.refractorySamples) {
+			if (agree >= this.needAgree && sum > this.minLevel && this.frame - this.lastOnset >= this.refractorySamples) {
 				const riseMs = this._riseTime(sum);
 				if (riseMs <= cfg.maxRiseMs) {
 					const quieterThanLast = this.lastPeak > 0 ? 20 * Math.log10(sum / this.lastPeak) : 0;
 					if (!(this.frame - this.lastOnset < cfg.bounceRejectMs / 1e3 * this.rate && quieterThanLast <= -cfg.bounceRejectDb)) {
-						out.push({
+						if (this.held) out.push(this._release());
+						this.held = {
 							frame: this.frame,
 							strength: sum,
 							bands: agree,
-							riseMs
-						});
+							riseMs,
+							levels: Array.from(this.fast),
+							until: this.frame + this.levelWindow
+						};
 						this.lastOnset = this.frame;
 						this.lastPeak = sum;
 					}
 				}
 			}
+			if (this.held) {
+				for (let b = 0; b < this.n; b++) if (this.fast[b] > this.held.levels[b]) this.held.levels[b] = this.fast[b];
+				if (sum > this.held.strength) this.held.strength = sum;
+				if (this.frame >= this.held.until) out.push(this._release());
+			}
 			this.frame++;
 		}
 		return out;
+	}
+	_release() {
+		const h = this.held;
+		this.held = null;
+		this.lastPeak = h.strength;
+		return {
+			frame: h.frame,
+			strength: h.strength,
+			bands: h.bands,
+			riseMs: h.riseMs,
+			levels: h.levels
+		};
+	}
+	/** Current per-band envelope, for sampling the bleed at a known moment. */
+	snapshot() {
+		return Array.from(this.fast);
 	}
 	/** How long ago the summed envelope was at 20% of its current value, in ms. */
 	_riseTime(now) {
@@ -271,6 +325,10 @@ var DrumOnsetProcessor = class extends AudioWorkletProcessor {
 			if (m.type === "refractory") this.det.setRefractoryMs(m.ms);
 			else if (m.type === "listen") this.listening = m.on;
 			else if (m.type === "probe") this.probing = m.on;
+			else if (m.type === "tune") {
+				if (m.mask) this.det.setEnabledBands(m.mask);
+				if (typeof m.minLevel === "number") this.det.setMinLevel(m.minLevel);
+			}
 		};
 		this.port.postMessage({
 			type: "ready",
@@ -288,7 +346,8 @@ var DrumOnsetProcessor = class extends AudioWorkletProcessor {
 				type: "hit",
 				time: h.frame / sampleRate,
 				strength: h.strength,
-				bands: h.bands
+				bands: h.bands,
+				levels: h.levels
 			});
 		}
 		if (this.probing) {
@@ -296,7 +355,8 @@ var DrumOnsetProcessor = class extends AudioWorkletProcessor {
 			for (const c of clicks) this.port.postMessage({
 				type: "click",
 				time: c.frame / sampleRate,
-				level: c.level
+				level: c.level,
+				levels: this.det.snapshot()
 			});
 		}
 		for (let i = 0; i < ch.length; i++) {
@@ -307,7 +367,8 @@ var DrumOnsetProcessor = class extends AudioWorkletProcessor {
 		if (this.meterCount >= this.meterEvery) {
 			this.port.postMessage({
 				type: "level",
-				peak: this.meterPeak
+				peak: this.meterPeak,
+				levels: this.det.snapshot()
 			});
 			this.meterPeak = 0;
 			this.meterCount = 0;

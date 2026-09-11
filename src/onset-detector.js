@@ -75,17 +75,22 @@ export class MicInput extends InputSource {
       if (m.type === 'hit') {
         // m.time is already AudioContext time, stamped on the render thread. Never
         // re-stamp it here.
-        this.emit({ time: m.time, strength: m.strength, source: 'mic' })
+        this.emit({ time: m.time, strength: m.strength, levels: m.levels, source: 'mic' })
       } else if (m.type === 'click') {
-        this._onClick(m.time, m.level)
+        this._onClick(m.time, m.level, m.levels)
       } else if (m.type === 'level') {
         this.level = m.peak
-        this._onLevel(m.peak)
+        this._onLevel(m.peak, m.levels)
       }
     }
 
     this.available = true
     return true
+  }
+
+  /** Apply what the app has learned about this device's bands and levels. */
+  tune ({ mask, minLevel }) {
+    if (this.node) this.node.port.postMessage({ type: 'tune', mask, minLevel })
   }
 
   /** Tighten or loosen double-hit rejection to suit the exercise being played. */
