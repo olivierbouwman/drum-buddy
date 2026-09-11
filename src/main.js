@@ -1628,6 +1628,10 @@ function snapshot () {
       timestampTrusted: engine._timestampUsable,
       fullscreen: fullscreenNote,
       installedMode: installed,
+      ua: navigator.userAgent.slice(0, 120),
+      screen: `${screen.width}x${screen.height}`,
+      outerWindow: `${window.outerWidth}x${window.outerHeight}`,
+      standalone: window.matchMedia('(display-mode: standalone)').matches,
       visualLagMs: engine.visualLagMs,
       trackLatencyMs: mic && mic.stream
         ? Math.round(((mic.stream.getAudioTracks()[0].getSettings() || {}).latency || 0) * 1000)
@@ -1708,6 +1712,39 @@ if (debug) {
  * When the app is being served from a developer machine on the same network, post what
  * it is seeing back there. Does nothing at all in the published build.
  */
+/*
+ * Offer to install, which is the only dependable route to an immersive window on
+ * Android. The Fullscreen API reported success on the tablet and still left the tab
+ * strip, status bar and navigation bar showing; an installed app has none of them.
+ *
+ * Chrome decides when to offer this and hands us the prompt; we stash it and show a
+ * button rather than nagging on load.
+ */
+let installPrompt = null
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault()
+  installPrompt = e
+  const btn = $('btn-install')
+  if (btn && !installed) btn.hidden = false
+})
+$('btn-install').addEventListener('click', async () => {
+  if (!installPrompt) return
+  $('btn-install').hidden = true
+  installPrompt.prompt()
+  try { await installPrompt.userChoice } catch {}
+  installPrompt = null
+})
+window.addEventListener('appinstalled', () => { $('btn-install').hidden = true })
+
+// The service worker is what makes the install offer possible, and lets her practise
+// with no wifi. Not registered on the dev server, where a stale cache would be a
+// needless source of confusion.
+if ('serviceWorker' in navigator && !diagnosticsActive) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register(import.meta.env.BASE_URL + 'sw.js').catch(() => {})
+  })
+}
+
 /** Anything that blew up, so a silent failure on the tablet is not invisible again. */
 const runtimeErrors = []
 window.addEventListener('error', (e) => {
