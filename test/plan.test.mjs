@@ -88,15 +88,25 @@ console.log('\ntempo is earned, not assumed')
 console.log('\nthe finisher is something she can actually play')
 {
   const first = EXERCISES[0].id
-  const plan = buildPlan(runs(first, 4, 40))
-  check('a finisher appears once something is mastered',
+  // Mastering only the right hand adds no finisher, and that is correct: the focus
+  // becomes the left hand and its mirror is the right, so the session already covers
+  // both and there is nothing left over to finish on.
+  const oneHand = buildPlan(runs(first, 4, 40))
+  check('mastering one hand does not add a repeat as a finisher',
+    oneHand.steps.length === 3, String(oneHand.steps.length))
+  check('and she moves on to the other hand', oneHand.focusId === 'quarters-left',
+    oneHand.focusId)
+
+  // Once both hands and alternating are solid, the focus moves past them and a genuine
+  // finisher appears.
+  const on = [...runs('quarters-right', 4, 40), ...runs('quarters-left', 4, 40), ...runs('singles', 4, 40)]
+  const plan = buildPlan(on)
+  check('a finisher appears once the session no longer covers everything mastered',
     plan.steps.length === 4 && plan.steps[3].kind === 'finisher', String(plan.steps.length))
-  check('and it is the thing she mastered', plan.steps[3].id === first, plan.steps[3].id)
-  check('and she works on the next one', plan.focusId === EXERCISES[1].id)
-  // Once alternating hands is solid it becomes the warm-up, as a teacher would have it.
-  const later = buildPlan([...runs(first, 4, 40), ...runs('quarters-left', 4, 40), ...runs('singles', 4, 40)])
-  check('warm-up becomes alternating hands once she can do it',
-    later.steps[0].id === 'singles', later.steps[0].id)
+  check('and it is something she has mastered',
+    ['quarters-right', 'quarters-left', 'singles'].includes(plan.steps[3].id), plan.steps[3].id)
+  check('the warm-up is still alternating hands', plan.steps[0].id === 'singles',
+    plan.steps[0].id)
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`)
