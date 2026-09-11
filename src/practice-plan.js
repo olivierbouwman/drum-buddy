@@ -80,12 +80,14 @@ export function buildPlan (history) {
   const solid = EXERCISES.filter((e) => progress[e.id].solid)
 
   /*
-   * Warming up on alternating hands is the standard, but only once alternating hands is
-   * something she can do — otherwise the warm-up is HARDER than the thing she is
-   * learning, which is backwards. Until then the simplest motion there is serves.
+   * The warm-up is always alternating hands, from day one.
+   *
+   * An earlier version used a single-hand exercise until alternating was "mastered", on
+   * the theory that alternating is harder. That was wrong twice over: slow alternating
+   * singles are the standard beginner warm-up, and more importantly it meant a whole
+   * session could pass without her left hand doing anything at all.
    */
-  const singles = EXERCISES.find((e) => e.id === 'singles')
-  const warmUp = singles && progress[singles.id].solid ? singles : EXERCISES[0]
+  const warmUp = EXERCISES.find((e) => e.id === 'singles') || EXERCISES[0]
 
   /*
    * The finisher is the hardest thing she has actually mastered — the most satisfying
@@ -102,7 +104,8 @@ export function buildPlan (history) {
    * different enough to be worth doing — and it means the reward slot arrives as soon
    * as she has mastered anything at all, rather than waiting for a second thing.
    */
-  const candidates = solid.filter((e) => e.id !== focus.id)
+  const alreadyPlayed = new Set([focus.id, focus.mirror].filter(Boolean))
+  const candidates = solid.filter((e) => !alreadyPlayed.has(e.id))
   const finisher = candidates.length ? candidates[candidates.length - 1] : null
 
   /*
@@ -120,10 +123,28 @@ export function buildPlan (history) {
   const focusBpm = tempoFor(history, focus.id)
   const finBpm = finisher ? tempoFor(history, finisher.id) : null
 
+  /*
+   * The second focus slot plays the OTHER HAND where the exercise has one.
+   *
+   * Practising the right hand twice and the left not at all is how a weak hand stays
+   * weak. Where an exercise is hand-specific its mirror takes the repeat slot, so both
+   * hands are worked every single day; where it is not — alternating strokes,
+   * paradiddles — the repeat is a genuine second go, which is what those need.
+   */
+  const mirror = focus.mirror ? EXERCISES.find((e) => e.id === focus.mirror) : null
+  const second = mirror || focus
+  const secondBpm = mirror ? tempoFor(history, mirror.id) : focusBpm
+
   const layout = [
     { kind: 'warmup', ex: warmUp, bpm: warmBpm, weight: SESSION.weights.warmup, label: 'Warm up' },
     { kind: 'focus', ex: focus, bpm: focusBpm, weight: SESSION.weights.focus, label: 'Today’s thing' },
-    { kind: 'focus', ex: focus, bpm: focusBpm, weight: SESSION.weights.focus, label: 'Once more' },
+    {
+      kind: 'focus',
+      ex: second,
+      bpm: secondBpm,
+      weight: SESSION.weights.focus,
+      label: mirror ? 'Other hand' : 'Once more',
+    },
   ]
   if (finisher) {
     layout.push({ kind: 'finisher', ex: finisher, bpm: finBpm, weight: SESSION.weights.finisher, label: 'Favourite' })

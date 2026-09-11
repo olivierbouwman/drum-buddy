@@ -44,6 +44,9 @@ const paradiddle = [
 export const EXERCISES = [
   {
     id: 'quarters-right',
+    // Its opposite hand. A session that works one hand and not the other lets the weak
+    // hand fall behind, which is the opposite of what this stage of practice is for.
+    mirror: 'quarters-left',
     name: 'Right hand',
     blurb: 'One hit on every beep, right hand only.',
     tip: 'Hold the stick like you are shaking hands with it — not too tight!',
@@ -55,6 +58,7 @@ export const EXERCISES = [
   },
   {
     id: 'quarters-left',
+    mirror: 'quarters-right',
     name: 'Left hand',
     blurb: 'Same again, with your left hand.',
     tip: 'This hand gets less practice, so it feels funny. That is normal!',

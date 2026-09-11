@@ -356,6 +356,21 @@ async function runWarmup () {
   await sleep((t - engine.now) * 1000 + 150)
   inSilentWindow = false
 
+  /*
+   * Nothing heard back means headphones, or the volume down, or the mute switch.
+   *
+   * Said only when it is actually true. A standing "turn the volume up, no headphones"
+   * notice becomes wallpaper within a week and is then ignored on the day it matters.
+   * This is the one moment we KNOW clicks were playing and nobody was drumming, so
+   * silence here has exactly one set of causes and they are all fixable.
+   *
+   * It does not stop her playing: the pad sensor works regardless, and the timing falls
+   * back to the value measured last session.
+   */
+  if (!timing.usable) {
+    toast('I can’t hear the beeps — turn the volume up, and no headphones', 6000)
+  }
+
   // --- how late is the pad sensor? ---
   await measureMotionDelay()
 

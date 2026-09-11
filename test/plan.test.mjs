@@ -21,13 +21,42 @@ console.log('\nthe shape is the same every day')
   const plan = buildPlan([])
   check('starts with a warm-up', plan.steps[0].kind === 'warmup')
   check('warm-up is slower than the default', plan.steps[0].bpm < 60, String(plan.steps[0].bpm))
-  check('the focus is repeated', plan.steps[1].id === plan.steps[2].id)
+  // Was "the focus is repeated". It should not be, where the exercise has a mirror:
+  // practising the right hand twice and the left not at all is how a weak hand stays
+  // weak. See the both-hands checks below.
+  check('the two focus slots cover the same material',
+    plan.steps[1].kind === 'focus' && plan.steps[2].kind === 'focus')
   // A beginner has no favourite yet, and inventing one just repeats the focus a third
   // time — three of four steps identical, which reads as a very boring plan.
   check('a beginner gets three steps, not a padded four', plan.steps.length === 3,
     String(plan.steps.length))
-  check('a beginner does not warm up on something harder than the focus',
-    plan.steps[0].id !== 'singles', plan.steps[0].id)
+  // Was the opposite check, on the theory that alternating hands is "harder" than a
+  // single hand and so should wait. Wrong twice: slow alternating singles are the
+  // standard beginner warm-up, and skipping them let a whole session pass with the left
+  // hand doing nothing.
+  check('the warm-up works both hands, from day one', plan.steps[0].id === 'singles',
+    plan.steps[0].id)
+}
+
+console.log('\nboth hands get worked every day')
+{
+  const plan = buildPlan([])
+  const ids = plan.steps.map((s) => s.id)
+  const hands = plan.steps.flatMap((s) =>
+    (EXERCISES.find((e) => e.id === s.id).notes || []).map((n) => n.hand))
+  check('the left hand is used', hands.includes('L'), ids.join(','))
+  check('the right hand is used', hands.includes('R'), ids.join(','))
+  check('a single-hand focus is paired with its mirror',
+    ids.includes('quarters-right') && ids.includes('quarters-left'), ids.join(','))
+  check('the warm-up alternates from day one', plan.steps[0].id === 'singles', plan.steps[0].id)
+}
+{
+  // The finisher must not repeat a hand the session already covers.
+  const r = Array.from({ length: 4 }, () => ({ exercise: 'quarters-right', spreadMs: 40, bpm: 65, at: Date.now() }))
+  const plan = buildPlan(r)
+  const ids = plan.steps.map((s) => s.id)
+  const dupes = ids.filter((v, i) => ids.indexOf(v) !== i && v !== 'singles')
+  check('no exercise appears twice in one session', dupes.length === 0, ids.join(','))
 }
 
 console.log('\nit does not race ahead')
