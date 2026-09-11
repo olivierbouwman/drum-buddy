@@ -770,21 +770,35 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
   place-items: center;
   min-height: 34vh;
 }
+/*
+ * The flash has to be an EVENT, not an animation.
+ *
+ * What is being judged is whether two onsets coincide, so the light has to arrive all at
+ * once and be gone again quickly. Three things follow from that.
+ *
+ * It does not move. A scale change reads as motion with a duration, and the eye then has
+ * to decide which moment of the movement to compare against the click. Brightness alone
+ * has only one moment in it.
+ *
+ * The transition lives on the BASE rule, not on .flash. CSS takes the transition from the
+ * state being entered, so declaring it on .flash — which is what this did — animated the
+ * way IN and smeared the onset over 160 ms, destroying the only instant that mattered.
+ * On the base rule it animates the way OUT instead, which is the half that can be soft.
+ *
+ * And it is brief: about three frames lit, then an 80 ms decay. Short enough not to blur
+ * into the sound, long enough to be unmissable at 60 Hz.
+ */
 .tune-pulse {
   width: clamp(90px, 22vh, 170px);
   aspect-ratio: 1;
   border-radius: 50%;
   background: var(--lantern, #ffb347);
-  /* Rests dim and small: the flash has to be an event, not a change of shade. */
-  opacity: .18;
-  transform: scale(.72);
+  opacity: .12;
+  transition: opacity 80ms linear;
 }
 .tune-pulse.flash {
   opacity: 1;
-  transform: scale(1);
-  /* No transition on the way in — the onset must be instantaneous, or there is nothing
-     unambiguous to line the sound up against. Only the fade out is animated. */
-  transition: opacity .16s ease-out, transform .16s ease-out;
+  transition: none;          /* instantaneous onset; see above */
 }
 
 .tune-controls {
@@ -815,8 +829,8 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 }
 .tune-caption { font-size: .8rem; opacity: .7; }
 
-@media (prefers-reduced-motion: reduce) {
-  /* The flash is the whole point of this screen, so it stays — but it stops scaling,
-     which is the part that reads as motion rather than as a light coming on. */
-  .tune-pulse, .tune-pulse.flash { transform: none; }
-}
+/*
+ * Nothing to soften under reduced motion: the pulse does not move, and a light coming on
+ * and off is not motion. It is also the entire content of this screen — removing it would
+ * leave nothing to tune against — and at 80 bpm it is well under the 3 Hz flash limit.
+ */

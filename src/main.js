@@ -2099,11 +2099,26 @@ async function runTuner () {
        * during a real exercise — so what is being lined up here is the same relationship
        * the app uses to score her, not a separate approximation of it.
        */
-      const when = engine.audibleAt(beat) - performance.now()
+      /*
+       * Woken early by a timer, then finished on animation frames.
+       *
+       * setTimeout is routinely late by a frame or more under load, and here that lands
+       * directly in the quantity being measured — a tuner whose own light jitters by
+       * 15 ms cannot be used to resolve anything finer than that. Waking 40 ms early and
+       * spinning on requestAnimationFrame puts the flash on the first frame at or after
+       * the target, which is the earliest it could physically be shown anyway.
+       */
+      const target = engine.audibleAt(beat)
       setTimeout(() => {
-        pulse.classList.add('flash')
-        setTimeout(() => pulse.classList.remove('flash'), 90)
-      }, Math.max(0, when))
+        const paint = () => {
+          if (performance.now() < target - 4) { requestAnimationFrame(paint); return }
+          pulse.classList.add('flash')
+          // Three frames lit. Long enough to be unmissable, short enough that the eye
+          // has one moment to compare against the click rather than a span.
+          setTimeout(() => pulse.classList.remove('flash'), 50)
+        }
+        requestAnimationFrame(paint)
+      }, Math.max(0, target - performance.now() - 40))
       next += BEAT
     }
   }, 100)
