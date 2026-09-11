@@ -11,7 +11,7 @@
  * Hence order-preserving matching plus an explicit whole-beat-shift check.
  */
 
-import { WINDOWS, STEADINESS } from './config.js'
+import { WINDOWS, STEADINESS, DRIFT } from './config.js'
 
 const median = (xs) => {
   if (!xs.length) return 0
@@ -151,7 +151,27 @@ export function summarise (notes, hits, beatS) {
   const shift = detectWholeBeatShift(notes, hits, beatS)
 
   const farOff = detectFarOff(notes, hits, beatS, pairs.length)
-  const band = STEADINESS.find((b) => spread < b.under) || STEADINESS[STEADINESS.length - 1]
+  let band = STEADINESS.find((b) => spread < b.under) || STEADINESS[STEADINESS.length - 1]
+
+  /*
+   * Drift is a steadiness fault, so it belongs in the steadiness verdict.
+   *
+   * Total accumulated creep across the run, as a fraction of a beat. Scored separately
+   * from scatter because a player can be tight bar to bar and still finish an eighth of
+   * a beat ahead of where they started — which is exactly what happened, and the run
+   * was praised for it.
+   */
+  const creepBeats = pairs.length >= 8
+    ? (drift * (pairs.length - 1)) / (beatS * 1000)
+    : 0
+  const drifting = Math.abs(creepBeats) < DRIFT.mentionOverBeat
+    ? null
+    : creepBeats < 0 ? 'faster' : 'slower'
+  if (drifting && Math.abs(creepBeats) > DRIFT.costsStarsOverBeat) {
+    // Never promote on account of drift, only hold back.
+    const held = STEADINESS[2]
+    if (band.stars > held.stars) band = held
+  }
 
   // When she is out by whole beats, the matcher's own offset is measured against the
   // WRONG notes and reads as a small, innocent-looking number. Report the real gap.
@@ -169,6 +189,8 @@ export function summarise (notes, hits, beatS) {
     driftBpm: effectiveBpm,
     badge: band.badge,
     stars: coverage < 0.4 ? 1 : band.stars,
+    drifting,
+    creepBeats,
     // A displaced player has no meaningful lean; saying 'a bit quick' there would
     // be worse than saying nothing.
     lean: shift !== 0 ? 'shifted' : Math.abs(offset) < 40 ? 'even' : offset < 0 ? 'quick' : 'slow',

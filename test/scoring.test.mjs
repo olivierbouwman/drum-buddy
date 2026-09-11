@@ -177,5 +177,33 @@ console.log('\ncapture window is bounded')
   check('window is half a beat at fast tempos', near(captureWindow(0.3), 150))
 }
 
+console.log('\ndrift is scored, not just measured')
+{
+  const beatS = 1
+  const ns = Array.from({ length: 32 }, (_, i) => ({ index: i, time: i * beatS, hand: 'R' }))
+
+  // Tight scatter, but each note lands 4 ms earlier than the last: 124 ms by the end.
+  // A real run shaped exactly like this was praised as "Real steady playing!".
+  const faster = summarise(ns, ns.map((n, i) => ({ time: n.time - i * 0.004, strength: 1 })), beatS)
+  check('speeding up is detected', faster.drifting === 'faster', String(faster.drifting))
+  check('creep is measured in beats', faster.creepBeats < -0.1, String(faster.creepBeats))
+  // 124 ms of creep is worth saying out loud but not worth docking a star for: the
+  // playing either side of the slope really was tight. This is the shape of the run
+  // that prompted all this, and it should keep its stars.
+  check('a small creep is mentioned but not punished', faster.stars === 3, String(faster.stars))
+
+  // A third of a beat is no longer a lean, it is the biggest thing that went wrong.
+  const runaway = summarise(ns, ns.map((n, i) => ({ time: n.time - i * 0.012, strength: 1 })), beatS)
+  check('a big creep costs a star', runaway.stars <= 2, String(runaway.stars))
+
+  const slower = summarise(ns, ns.map((n, i) => ({ time: n.time + i * 0.004, strength: 1 })), beatS)
+  check('slowing down is not reported as speeding up', slower.drifting === 'slower', String(slower.drifting))
+
+  const wobble = [0.01, -0.012, 0.008, -0.009, 0.011, -0.007]
+  const steady = summarise(ns, ns.map((n, i) => ({ time: n.time + wobble[i % wobble.length], strength: 1 })), beatS)
+  check('a steady run is not accused of drifting', steady.drifting === null, String(steady.drifting))
+  check('a steady run still scores three stars', steady.stars === 3, String(steady.stars))
+}
+
 console.log(`\n${passed} passed, ${failed} failed\n`)
 process.exit(failed ? 1 : 0)

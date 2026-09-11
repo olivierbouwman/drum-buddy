@@ -171,7 +171,21 @@ export class MicInput extends InputSource {
       if (this.stream) this.stream.getTracks().forEach((t) => t.stop())
       // Step down the ladder each time, so a stack that will not deliver raw audio
       // eventually gets asked for something it will.
-      this.attempt = (this.attempt || 0) + 1
+      /*
+       * Go straight to the bottom rung rather than stepping.
+       *
+       * Every rung above it asks for echo cancellation OFF, and on this tablet all
+       * three returned digital silence — Android would rather give nothing than give
+       * raw capture. The last rung is a plain {audio: true}, the one configuration the
+       * platform is certain to honour, and its processing costs us nothing here: the
+       * detector keys on the RATIO between a fast and a slow envelope, so automatic
+       * gain cannot fool it, and echo cancellation removing our own metronome from the
+       * signal is help, not harm.
+       *
+       * Ordering the ladder best-first meant the rung most likely to actually work was
+       * the one it never reached.
+       */
+      this.attempt = MIC_LADDER.length - 1
       const s = await openMic((i) => { this.constraintsUsed = i }, this.attempt)
       if (this.source) try { this.source.disconnect() } catch {}
       this.stream = s

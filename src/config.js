@@ -229,6 +229,23 @@ export const CALIBRATION = {
  * territory. A normal eight-year-old would have scored the bottom badge every single
  * session forever. Thresholds now come from the chosen level.
  */
+/**
+ * Speeding up or slowing down across a run, as a fraction of one beat.
+ *
+ * Scatter and drift are different faults and only one of them was being scored. A real
+ * run came back with tight scatter and a slope that added up to an eighth of a beat by
+ * the end — the player started on the beat and finished well ahead of it — and the app
+ * called that "Real steady playing!" and gave three stars. Creeping faster is the most
+ * common beginner fault there is, and it was the one thing the summary could not see.
+ *
+ * Measured as total accumulated drift over the whole run, because that is what it
+ * sounds like: a slope too small to hear in any one bar is obvious over thirty.
+ */
+export const DRIFT = {
+  mentionOverBeat: 0.12,   // say something about it
+  costsStarsOverBeat: 0.3, // it is now the biggest thing that went wrong
+}
+
 export const STEADINESS = [
   { under: 45,       badge: 'Steady as the river!', stars: 3 },
   { under: 70,       badge: 'Real steady playing!', stars: 3 },

@@ -1131,6 +1131,17 @@ function finishExercise () {
   if (stats.enough && stats.lean !== 'even') {
     add('Today you were', stats.lean === 'quick' ? 'a bit of a 🐰 hare' : 'a bit of a 🐢 tortoise')
   }
+  /*
+   * Creeping faster is the classic beginner fault and it is invisible from inside the
+   * playing — she cannot hear a slope, only the app can. Said as a thing that happened
+   * over the run, not as a mark against her: the lean above is who she was today, this
+   * is what changed while she played.
+   */
+  if (stats.enough && stats.drifting) {
+    add('As you played', stats.drifting === 'faster'
+      ? 'you sped up 🐰 — try to hold it steady'
+      : 'you slowed down 🐢 — try to hold it steady')
+  }
   if (debug) {
     add('latency (ms)', timing.latencyMs === null ? 'unmeasured' : Math.round(timing.latencyMs))
     add('latency drift', Math.round(timing.spreadMs * 10) / 10 + ' ms')
@@ -1750,6 +1761,9 @@ function snapshot () {
       outputLatencyMs: Math.round((engine.outputLatency || 0) * 1000),
       timestampTrusted: engine._timestampUsable,
       fullscreen: fullscreenNote,
+      // Chrome rejects with a bare TypeError both when the gesture is stale and when
+      // the document may not go full screen at all. This separates the two.
+      fullscreenAllowed: document.fullscreenEnabled,
       installedMode: installed,
       ua: navigator.userAgent.slice(0, 120),
       screen: `${screen.width}x${screen.height}`,
