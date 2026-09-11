@@ -125,7 +125,24 @@ export const METRONOME = {
 
 export const SCHEDULER = {
   tickMs: 25,           // how often the lookahead loop runs
-  lookaheadS: 0.25,     // how far ahead clicks are scheduled; must exceed METRONOME.nudgeMaxMs
+  /*
+   * How far ahead clicks are scheduled.
+   *
+   * Was 0.25, which looked like plenty against a 0.125 nudge and was not. Two things eat
+   * into it. ctx.currentTime on her tablet advances in 85 ms steps, so `now` is stale by
+   * up to a whole step and the horizon is effectively that much nearer. And the emission
+   * has to happen a nudge BEFORE the beat, which comes straight off the same budget.
+   *
+   *   250 horizon − 85 stale − 125 nudge = 40 ms of slack
+   *
+   * Forty milliseconds is inside the range a timer callback can be delayed by on a busy
+   * tablet, and when it goes negative the emission time lands in the past, gets clamped
+   * to now, and that one beep arrives late. Which is audible as exactly what it is: a
+   * metronome that is not quite steady.
+   *
+   * At 0.6 the same sum leaves 315 ms even at the largest nudge the app will accept.
+   */
+  lookaheadS: 0.6,
   countInBeats: 4,
 }
 

@@ -242,10 +242,17 @@ console.log('\nthe nudge is the latency term that was being dropped')
   check('a tuned zero is honoured, not treated as absent', n(BASE, 0.496, 0.171, 0) === 0)
   check('a tuned value is still capped', n(BASE, 0.496, 0.171, 9) === METRONOME.nudgeMaxMs)
 
-  // The scheduler has to reach a beat before it needs to emit it.
-  check('the lookahead can always cover the largest nudge',
-    SCHEDULER.lookaheadS * 1000 > METRONOME.nudgeMaxMs,
-    `lookahead ${SCHEDULER.lookaheadS * 1000} ms vs max nudge ${METRONOME.nudgeMaxMs} ms`)
+  /*
+   * The lookahead has to cover the nudge AND the two things that quietly eat it: a
+   * ctx.currentTime that steps 85 ms at a time, and a timer callback that can be late.
+   * Merely exceeding the nudge is not enough — it did exceed it, at 250 against 125, and
+   * beeps were still landing in the past and being clamped.
+   */
+  const STALE_CLOCK_MS = 85
+  const LATE_TIMER_MS = 100
+  const slack = SCHEDULER.lookaheadS * 1000 - STALE_CLOCK_MS - METRONOME.nudgeMaxMs
+  check('the lookahead survives a stale clock and a late timer at the largest nudge',
+    slack > LATE_TIMER_MS, `${slack.toFixed(0)} ms of slack`)
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`)

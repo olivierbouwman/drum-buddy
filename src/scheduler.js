@@ -40,6 +40,8 @@ export class Scheduler {
     this.totalBeats = this.countIn + beatsPerBar * bars
 
     // Everything is scheduled relative to this one instant.
+    this.lateClicks = 0
+    this.worstLateMs = 0
     this.startTime = this.engine.now + 0.25
     this.nextBeat = 0
     this.noteQueue = this._buildNotes()
@@ -88,7 +90,23 @@ export class Scheduler {
        * of those two moves; everything scored or drawn keeps using `t`.
        */
       const nudgeS = this.nudgeS ?? METRONOME.nudgeMs / 1000
-      const emitAt = Math.max(this.engine.now, t - nudgeS)
+      const wanted = t - nudgeS
+      /*
+       * A clamp here means a late beep, and a late beep in a metronome teaches the wrong
+       * thing — so it is counted rather than absorbed.
+       *
+       * Everything else about this is exact: beat times are `startTime + n * beatS` and
+       * the click is handed to the speaker with a precise AudioContext time, which is
+       * sample-accurate. The single way spacing can drift is an emission time that has
+       * already passed by the time it is scheduled, which happens when the lookahead
+       * does not cover the nudge plus a stale clock plus a late timer. It did not, at
+       * 250 ms against a 125 ms nudge; SCHEDULER.lookaheadS explains the arithmetic.
+       */
+      if (wanted < this.engine.now) {
+        this.lateClicks = (this.lateClicks || 0) + 1
+        this.worstLateMs = Math.max(this.worstLateMs || 0, (this.engine.now - wanted) * 1000)
+      }
+      const emitAt = Math.max(this.engine.now, wanted)
       this.clicks.playAt(this.thumpMode ? 'thump' : (accent ? 'accent' : 'beat'), emitAt)
       this._onClick({
         index: this.nextBeat,

@@ -75,6 +75,29 @@
   <p class="fineprint" id="tune-hint">
     Arrow keys work too. Saved the moment you change it.
   </p>
+
+  <!--
+    Step two. Aligning the beep to the flash makes the app's two outputs agree with each
+    other, which is objective and checkable. It says nothing about the OTHER delay in the
+    chain — how long the pad sensor takes to report a strike — and that one is what
+    decides whether a hit on the beat is scored as on the beat.
+  -->
+  <hr class="tune-rule">
+  <p class="setup-note">
+    Now drum along with it. This shows what the app thinks of your hits — aim to get it
+    near zero without changing how you play.
+  </p>
+  <div class="tune-controls">
+    <button id="pad-down" class="tune-step" aria-label="Expect hits earlier">−</button>
+    <div class="tune-readout">
+      <output id="pad-live" aria-live="off">—</output>
+      <span class="tune-caption">your last hits</span>
+    </div>
+    <button id="pad-up" class="tune-step" aria-label="Expect hits later">+</button>
+  </div>
+  <p class="fineprint">
+    Pad sensor delay: <span id="pad-value">15</span> ms
+  </p>
   <div class="tune-exit">
     <button id="tune-done" class="huge">✓ Done</button>
     <button id="tune-reset" class="ghost">Start over</button>

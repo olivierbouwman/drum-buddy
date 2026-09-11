@@ -753,6 +753,15 @@ function rememberPadDelay (measuredS) {
 
 /** No measurement today: the sensor's delay is a constant of this hardware. */
 function useDefaultPadDelay () {
+  // A hand-set value outranks both the stored measurements and the constant, for the
+  // same reason the tuned nudge outranks its derivations: it was checked against the
+  // thing itself rather than inferred from something adjacent to it.
+  const trimmed = storedPadDelayMs()
+  if (trimmed !== null) {
+    motionDelayS = Math.max(0, Math.min(trimmed, MOTION.padDelayMaxMs)) / 1000
+    applyMotionTiming()
+    return
+  }
   const stored = padDelayHistory()
   motionDelayS = stored.length ? medianOf(stored) : MOTION.padDelayFallbackMs / 1000
   padDelayHistoryMs = stored.map((v) => Math.round(v * 1000))
@@ -1928,8 +1937,12 @@ function snapshot () {
       // milliseconds means motion timing has to go through engine.nowFine.
       clockStepMs: engine.clockStepMs ? Math.round(engine.clockStepMs) : null,
       nudgeMs: scheduler && scheduler.nudgeS != null ? Math.round(scheduler.nudgeS * 1000) : null,
+      // Must stay zero. Anything else is a metronome that is not steady.
+      lateClicks: scheduler ? (scheduler.lateClicks || 0) : 0,
+      worstLateMs: scheduler ? Math.round(scheduler.worstLateMs || 0) : 0,
       baseLatencyMs: Math.round((engine.baseLatency || 0) * 1000),
       nudgeTunedMs: storedNudgeMs(),
+      padTrimMs: storedPadDelayMs(),
       padDelayRefused,
       todayWatch,
       warmupHits,
@@ -2037,6 +2050,26 @@ armTunerGesture()
  * outranks every calculation.
  */
 const NUDGE_KEY = 'drum-buddy:nudge-ms'
+/*
+ * The pad sensor's delay, when it has been set by hand.
+ *
+ * Separate from the nudge because they fix different faults and the tuner can only see
+ * one of them. Lining the beep up with the flash makes the app's two OUTPUTS agree; this
+ * is about its INPUT — how long the accelerometer takes to report a strike — and that is
+ * the term that decides whether a hit on the beat is scored as on the beat. No amount of
+ * moving the speaker can correct it, which is why aligning sound to light and then still
+ * having to hit early is not a contradiction.
+ */
+const PAD_TRIM_KEY = 'drum-buddy:pad-delay-ms'
+
+function storedPadDelayMs () {
+  try {
+    const raw = localStorage.getItem(PAD_TRIM_KEY)
+    if (raw === null) return null
+    const v = Number(raw)
+    return Number.isFinite(v) ? v : null
+  } catch { return null }
+}
 
 function storedNudgeMs () {
   try {
@@ -2065,75 +2098,139 @@ async function runTuner () {
   const render = () => { value.textContent = `${nudgeMs} ms` }
   render()
 
+  /*
+   * Beats are scheduled once, well ahead, and re-scheduled if the offset changes.
+   *
+   * The first version polled every 100 ms with a 250 ms horizon and emitted a nudge
+   * early — which on this tablet leaves negative slack once the 85 ms clock step and a
+   * late timer are counted, so beeps were landing in the past, being clamped to `now`,
+   * and arriving late. An unsteady metronome is a bad tool for judging steadiness.
+   *
+   * A long horizon on its own would make the buttons feel dead, since a press could not
+   * affect anything already queued. So anything still in the future is cancelled and
+   * re-queued at the new offset, which keeps the horizon generous AND the response
+   * immediate.
+   */
+  const BEAT = 0.75                     // 80 bpm: frequent enough to judge, spaced enough to hear
+  const HORIZON = 1.2
+  const origin = engine.now + 0.4
+  let beatIndex = 0
+  let pending = []                      // { beat, emit, src }
+
+  const flashAt = (beat) => {
+    const target = engine.audibleAt(beat)
+    setTimeout(() => {
+      const paint = () => {
+        if (performance.now() < target - 4) { requestAnimationFrame(paint); return }
+        pulse.classList.add('flash')
+        setTimeout(() => pulse.classList.remove('flash'), 50)
+      }
+      requestAnimationFrame(paint)
+    }, Math.max(0, target - performance.now() - 40))
+  }
+
+  const emitFor = (beat) => beat - nudgeMs / 1000
+
+  const queue = (beat) => {
+    const emit = emitFor(beat)
+    const src = clicks.playAt('beat', Math.max(engine.now + 0.01, emit))
+    pending.push({ beat, emit, src })
+  }
+
   const change = (delta) => {
     nudgeMs = Math.max(0, Math.min(nudgeMs + delta, METRONOME.nudgeMaxMs))
     storeNudgeMs(nudgeMs)
     render()
+    /*
+     * Re-queue whatever has not been handed over yet. A tenth of a second of margin:
+     * closer than that and stopping a source is a race with it starting.
+     */
+    const cutoff = engine.now + 0.1
+    const stale = pending.filter((p) => p.emit > cutoff)
+    pending = pending.filter((p) => p.emit <= cutoff)
+    for (const p of stale) {
+      try { p.src.stop() } catch { /* already started; nothing to undo */ }
+      queue(p.beat)
+    }
   }
+
   $('tune-up').addEventListener('click', () => change(STEP))
   $('tune-down').addEventListener('click', () => change(-STEP))
   $('tune-reset').addEventListener('click', () => {
     try { localStorage.removeItem(NUDGE_KEY) } catch {}
-    nudgeMs = Math.round((engine.baseLatency || 0) * 1000)
-    render()
+    change(Math.round((engine.baseLatency || 0) * 1000) - nudgeMs)
   })
   window.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { change(STEP); e.preventDefault() }
     if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { change(-STEP); e.preventDefault() }
   })
 
-  /*
-   * A plain lookahead loop rather than the exercise scheduler: this one never ends, has
-   * no notes and no count-in, and needs the nudge to change between one beat and the
-   * next so the effect of a button press is heard immediately.
-   */
-  const BEAT = 0.75                       // 80 bpm: often enough to judge, slow enough to hear each one
-  let next = engine.now + 0.3
   const loop = setInterval(() => {
-    const horizon = engine.now + SCHEDULER.lookaheadS
-    while (next < horizon) {
-      const beat = next
-      clicks.playAt('beat', Math.max(engine.now, beat - nudgeMs / 1000))
-      /*
-       * The flash is scheduled against the beat itself, exactly as a falling note is
-       * during a real exercise — so what is being lined up here is the same relationship
-       * the app uses to score her, not a separate approximation of it.
-       */
-      /*
-       * Woken early by a timer, then finished on animation frames.
-       *
-       * setTimeout is routinely late by a frame or more under load, and here that lands
-       * directly in the quantity being measured — a tuner whose own light jitters by
-       * 15 ms cannot be used to resolve anything finer than that. Waking 40 ms early and
-       * spinning on requestAnimationFrame puts the flash on the first frame at or after
-       * the target, which is the earliest it could physically be shown anyway.
-       */
-      const target = engine.audibleAt(beat)
-      setTimeout(() => {
-        const paint = () => {
-          if (performance.now() < target - 4) { requestAnimationFrame(paint); return }
-          pulse.classList.add('flash')
-          // Three frames lit. Long enough to be unmissable, short enough that the eye
-          // has one moment to compare against the click rather than a span.
-          setTimeout(() => pulse.classList.remove('flash'), 50)
-        }
-        requestAnimationFrame(paint)
-      }, Math.max(0, target - performance.now() - 40))
-      next += BEAT
+    const horizon = engine.now + HORIZON
+    let beat = origin + beatIndex * BEAT
+    while (beat < horizon) {
+      queue(beat)
+      flashAt(beat)
+      beatIndex++
+      beat = origin + beatIndex * BEAT
     }
-  }, 100)
+    // Drop anything long past, so the list cannot grow for the life of the screen.
+    pending = pending.filter((p) => p.emit > engine.now - 1)
+  }, SCHEDULER.tickMs)
 
   /*
-   * A way out.
+   * Step two: drum along and see what the app makes of it.
    *
-   * The value is already saved — it is written on every press — so this is not a Save
-   * button, it is a door. Without one the only exit was killing the app, and on a device
-   * with no address bar that is also the only way to shed the ?tune in the URL.
+   * Deliberately a READOUT, not a "tap here and I'll work it out". If it simply took the
+   * median of someone's hits and called that zero, it would define on-time as wherever
+   * that person happens to play — and anticipating the beat by a few tens of
+   * milliseconds is normal, so the child would then inherit an adult's lean as the
+   * standard she is measured against. That is the one outcome worth avoiding entirely.
    *
-   * Reloading to the bare path rather than just switching screens: it drops the query,
-   * silences the metronome, and guarantees the next exercise picks the new offset up
-   * from storage rather than from whatever this session happened to be holding.
+   * Showing the number instead separates the two things a person cannot separate by
+   * feel: whether the app is wrong, or whether they are simply early. Play naturally and
+   * watch it. If it sits near zero, the app agrees with you and any remaining sense of
+   * hitting early is your own anticipation, which is not a fault. If it sits at a steady
+   * offset in the same direction as the misfeel, the sensor delay is wrong and this is
+   * the knob for it.
    */
+  let padMs = storedPadDelayMs() ?? Math.round(motionDelayS * 1000)
+  const padValue = $('pad-value')
+  const padLive = $('pad-live')
+  const errors = []
+
+  const applyPad = () => {
+    padValue.textContent = String(padMs)
+    motionDelayS = padMs / 1000
+    applyMotionTiming()
+    try { localStorage.setItem(PAD_TRIM_KEY, String(padMs)) } catch {}
+  }
+  applyPad()
+
+  const bumpPad = (delta) => {
+    padMs = Math.max(0, Math.min(padMs + delta, MOTION.padDelayMaxMs))
+    errors.length = 0
+    padLive.textContent = '—'
+    applyPad()
+  }
+  $('pad-up').addEventListener('click', () => bumpPad(STEP))
+  $('pad-down').addEventListener('click', () => bumpPad(-STEP))
+
+  await setUpSensors()
+  onHits((hit) => {
+    const corrected = timing.correct(hit.time, hit.source)
+    // Nearest beat on the same grid the exercises use.
+    const k = Math.round((corrected - origin) / BEAT)
+    const err = (corrected - (origin + k * BEAT)) * 1000
+    if (Math.abs(err) > BEAT * 500) return              // not playing along; ignore
+    errors.push(err)
+    if (errors.length > 12) errors.shift()
+    if (errors.length < 4) return
+    const sorted = [...errors].sort((a, b) => a - b)
+    const med = Math.round(sorted[sorted.length >> 1])
+    padLive.textContent = med === 0 ? 'spot on' : `${Math.abs(med)} ms ${med < 0 ? 'early' : 'late'}`
+  })
+
   $('tune-done').addEventListener('click', () => {
     clearInterval(loop)
     location.href = location.pathname

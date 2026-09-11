@@ -830,6 +830,8 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 .tune-caption { font-size: .8rem; opacity: .7; }
 
 .tune-exit { display: flex; flex-direction: column; align-items: center; gap: .4rem; }
+.tune-rule { width: min(80%, 30rem); border: 0; border-top: 1px solid var(--ink); opacity: .18; margin: var(--pad) auto; }
+#pad-live { display: block; font-size: clamp(1.4rem, 4.5vh, 2rem); font-variant-numeric: tabular-nums; font-weight: 700; }
 
 /*
  * Nothing to soften under reduced motion: the pulse does not move, and a light coming on
