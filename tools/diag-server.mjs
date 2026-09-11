@@ -12,6 +12,27 @@
  */
 import { mkdirSync, writeFileSync, appendFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { createServer } from 'node:http'
+
+/**
+ * A plain-HTTP listener whose only job is to bounce you to the HTTPS one.
+ *
+ * Typing a bare `192.168.0.x:5174` into Chrome gets you http, which hits a TLS-only
+ * server and closes with no reply — ERR_EMPTY_RESPONSE, which looks like the server is
+ * down rather than like a scheme mismatch. This makes the wrong URL work anyway.
+ */
+function startHttpRedirect (httpsPort, httpPort) {
+  const srv = createServer((req, res) => {
+    const host = (req.headers.host || '').split(':')[0]
+    res.writeHead(302, { Location: `https://${host}:${httpsPort}${req.url}` })
+    res.end()
+  })
+  srv.on('error', (e) => console.warn('[diag] redirect listener: ' + e.message))
+  srv.listen(httpPort, () => {
+    console.log(`[diag] http://<this-machine>:${httpPort}/ redirects to the https server`)
+  })
+  return srv
+}
 
 export function diagServer (dir = 'tools/diag') {
   return {
@@ -48,6 +69,11 @@ export function diagServer (dir = 'tools/diag') {
         })
       })
       console.log('[diag] collecting tablet diagnostics into ' + dir)
+      // Only when serving to the network; there is nothing to rescue on localhost.
+      if (server.config.server.host) {
+        const port = server.config.server.port || 5174
+        startHttpRedirect(port, port + 1)
+      }
     },
   }
 }
