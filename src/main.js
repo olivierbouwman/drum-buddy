@@ -106,9 +106,21 @@ $('btn-play').addEventListener('click', async () => {
    * Full screen is fired afterwards and deliberately not awaited: it is cosmetic, and
    * nothing should wait on it.
    */
+  /*
+   * BOTH calls have to happen synchronously in this handler.
+   *
+   * A browser only honours full screen and audio start while the tap that triggered
+   * them is still "active", and that activation does not survive an await. Asking for
+   * full screen first broke audio; awaiting audio first broke full screen — the request
+   * was made and then simply hung, never granted and never refused.
+   *
+   * So both are kicked off before anything is awaited, and only then is the audio
+   * waited on.
+   */
+  goFullscreen()
+  const audioReady = engine.start()
   try {
-    await withTimeout(engine.start(), 5000, 'audio')
-    goFullscreen()
+    await withTimeout(audioReady, 5000, 'audio')
     clicks = new ClickSource(engine.ctx)
     await clicks.prepare()
     scheduler = new Scheduler(engine, clicks)
