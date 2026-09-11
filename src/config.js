@@ -166,7 +166,14 @@ export const MOTION = {
    * instead of quietly becoming her score.
    */
   padDelayMaxMs: 90,
-  padDelayFallbackMs: 25,
+  /*
+   * Used every session now, not just when a measurement fails.
+   *
+   * Half a sample period at ~48 Hz is 10 ms of quantisation on its own, and the browser
+   * adds a little on top delivering the event. Every reading her tablet has produced
+   * once the clocks were straightened out sat between 5 and 22 ms.
+   */
+  padDelayFallbackMs: 15,
 
   minRateHz: 25,        // below this the sensor is useless even for confirmation
   windowS: 3.0,         // how much history the median and spread are taken over

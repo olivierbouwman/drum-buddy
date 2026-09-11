@@ -34,6 +34,9 @@ const $ = (id) => document.getElementById(id)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const params = new URLSearchParams(location.search)
 const debug = params.has('debug') || params.has('selftest')
+// The pad sensor's delay is a property of the device, not of the day. Measured once on
+// something new, then left alone; see the note in runWarmup().
+const wantsCalibration = params.has('calibrate')
 const wantSelfTest = params.has('selftest')
 
 const engine = new AudioEngine()
@@ -346,45 +349,38 @@ async function runWarmup () {
   const dots = $('warmup-dots')
   const progress = $('warmup-progress')
   dots.innerHTML = ''
-
-  // --- listening phase: metronome only, nobody playing ---
-  $('warmup-msg').textContent = 'Shhh… listening to your room 🤫'
-  if (progress) progress.firstElementChild.style.width = '0%'
-  inSilentWindow = true
-  // Wider than any plausible round trip, so each click heard can only be the one just
-  // played. Tighter spacing made the measurement ambiguous on a slow audio stack.
-  const gap = 0.95
-  let t = engine.now + 0.25
-  for (let i = 0; i < 5; i++) {
-    clicks.playAt(i === 0 ? 'accent' : 'beat', t)
-    timing.expectClick(t)
-    const when = Math.max(0, engine.audibleAt(t) - performance.now())
-    const done = (i + 1) / 5
-    setTimeout(() => {
-      if (progress) progress.firstElementChild.style.width = Math.round(done * 100) + '%'
-    }, when)
-    t += gap
-  }
-  await sleep((t - engine.now) * 1000 + 150)
-  inSilentWindow = false
+  if (progress) progress.hidden = true
 
   /*
-   * Nothing heard back means headphones, or the volume down, or the mute switch.
+   * The warm-up is one step now: hit the pad four times.
    *
-   * Said only when it is actually true. A standing "turn the volume up, no headphones"
-   * notice becomes wallpaper within a week and is then ignored on the day it matters.
-   * This is the one moment we KNOW clicks were playing and nobody was drumming, so
-   * silence here has exactly one set of causes and they are all fixable.
+   * Two steps came out. Five clicks played to nobody measured the microphone's round
+   * trip, which nothing uses any more — the pad is the timing source, and its correction
+   * is the browser's own output latency plus a sensor delay of about fifteen
+   * milliseconds. The volume check riding along with it tested `timing.usable`, which is
+   * true whenever ANY latency number exists, last session's included, so it could never
+   * fire. Five seconds, a number nobody reads, and a warning that never appears.
    *
-   * It does not stop her playing: the pad sensor works regardless, and the timing falls
-   * back to the value measured last session.
+   * The four hits stay. They are the only part she was ever doing on purpose: they set
+   * how hard she plays today, which is what arms drumming-to-start, and they are
+   * drumming rather than instructions.
    */
-  if (!timing.usable) {
-    toast('I can’t hear the beeps — turn the volume up, and no headphones', 6000)
-  }
 
-  // --- how late is the pad sensor? ---
-  await measureMotionDelay()
+  /*
+   * How late is the pad sensor? About fifteen milliseconds, and measuring it costs more
+   * than knowing it.
+   *
+   * Five paced taps on a circle produced [21, -3, 22, 5] on her tablet: a median of 13
+   * against a spread of 23, so the measurement's own noise was larger than the thing it
+   * measured, and one reading claimed the sensor reported the tap before it happened.
+   * The constant is within about ten milliseconds of every reading ever taken here,
+   * which is a seventh of the perfect window — and it is six seconds shorter and has no
+   * instructions to misunderstand.
+   *
+   * Still measurable on a device this has never seen: add ?calibrate to the URL.
+   */
+  if (wantsCalibration) await measureMotionDelay()
+  else useDefaultPadDelay()
 
   // --- her turn ---
   for (let i = 0; i < 4; i++) dots.append(document.createElement('span'))
@@ -712,6 +708,14 @@ function rememberPadDelay (measuredS) {
   }
   padDelayHistoryMs = history.map((v) => Math.round(v * 1000))
   return median
+}
+
+/** No measurement today: the sensor's delay is a constant of this hardware. */
+function useDefaultPadDelay () {
+  const stored = padDelayHistory()
+  motionDelayS = stored.length ? medianOf(stored) : MOTION.padDelayFallbackMs / 1000
+  padDelayHistoryMs = stored.map((v) => Math.round(v * 1000))
+  applyMotionTiming()
 }
 
 let padDelayHistoryMs = []
@@ -1072,14 +1076,15 @@ function startExercise (index, step = null) {
   // — but any of them beats leaving her without feedback.
   ensureLatency()
   applyMotionTiming()
-  clearTimeout(calibWatch)
-  calibWatch = setTimeout(() => {
-    if (!scheduler.running) return
-    ensureLatency()
-    if (timing.approximate) {
-      toast('I can’t hear the beep clearly — timing is a rough guess', 5000)
-    }
-  }, (SCHEDULER.countInBeats + 1) * beatS * 1000)
+  /*
+   * There used to be a warning here when the timing was "approximate".
+   *
+   * Approximate now means every session — the microphone no longer measures anything —
+   * so it would have appeared before every exercise, and it would have been wrong:
+   * output latency plus a known sensor delay is a good number, not a rough guess. A
+   * warning that shows up every time teaches her to look past it, which costs more than
+   * it ever saved.
+   */
 }
 
 function updateStreak () {
@@ -1096,11 +1101,9 @@ function nudgeTempo (d) {
   if (scheduler.running) { stopPlay(); startExercise(state.exerciseIndex) }
 }
 
-let calibWatch = null
 let progressTimer = null
 
 function stopPlay () {
-  clearTimeout(calibWatch)
   clearInterval(progressTimer)
   inSilentWindow = false
   scheduler.stop()
