@@ -56,7 +56,24 @@ export const SESSION = {
   /** Roughly how the time is shared out; the focus gets the lion's share. */
   weights: { warmup: 0.18, focus: 0.28, finisher: 0.26 },
   minBars: 4,
-  maxBars: 34,
+  /*
+   * The ceiling on one step is a DURATION, not a bar count.
+   *
+   * It was 34 bars, and a bar count is the wrong unit for it: what makes a step too long
+   * is how long it lasts, and a bar at 120 BPM is a third of a bar at 40. So the cap did
+   * nothing at slow tempos, where a step could genuinely drag, and bit hard at fast ones,
+   * where each bar is short and plenty are needed to fill the time — 5.0 minutes of
+   * drumming at 85 BPM fell to 4.4 at 120. Getting faster quietly bought her less
+   * practice, which is the same fault as the original 2.6-minutes-claiming-five, just
+   * hiding at the other end of the range.
+   *
+   * Two and a half minutes is longer than any single step the planner asks for, so this
+   * is a guard against something going wrong rather than a routine limit.
+   */
+  maxStepSeconds: 150,
+  /* An absolute backstop on note count, so nothing can ask the lane view for a
+     pathological list. Never reached in normal use. */
+  maxBars: 120,
 }
 
 /**

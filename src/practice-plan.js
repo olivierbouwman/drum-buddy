@@ -161,7 +161,13 @@ export function buildPlan (history) {
       id: l.ex.id,
       bpm: l.bpm,
       label: l.label,
-      bars: Math.max(SESSION.minBars, Math.min(SESSION.maxBars, Math.round(want))),
+      // Capped by how long the step would last, not by how many bars that takes; see
+      // SESSION.maxStepSeconds.
+      bars: Math.max(SESSION.minBars, Math.min(
+        SESSION.maxBars,
+        Math.floor(SESSION.maxStepSeconds / secondsPerBar),
+        Math.round(want),
+      )),
     }
   })
 

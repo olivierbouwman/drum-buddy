@@ -6,7 +6,7 @@
  */
 import { buildPlan, progressFor, tempoFor } from '../src/practice-plan.js'
 import { EXERCISES } from '../src/exercises.js'
-import { DRUM_NAV } from '../src/config.js'
+import { DRUM_NAV, SESSION } from '../src/config.js'
 
 let passed = 0
 let failed = 0
@@ -141,6 +141,50 @@ console.log('\nthe drum-to-start gesture is performable by a person')
     fits([2000, 2000, 2000, 2000], DRUM_NAV.withinMs, DRUM_NAV.hitsNeeded) !== true)
   check('it needs more than two hits however fast they come',
     fits([200], DRUM_NAV.withinMs, DRUM_NAV.hitsNeeded) !== true)
+}
+
+console.log('\ngetting faster does not buy less practice')
+{
+  const historyAt = (bpm) => {
+    const out = []
+    for (const ex of EXERCISES) {
+      for (let i = 0; i < 6; i++) {
+        out.push({ exercise: ex.id, bpm, spreadMs: 20, stars: 3, coverage: 1, when: '2026-09-0' + (i + 1) })
+      }
+    }
+    return out
+  }
+
+  /*
+   * The whole tempo range, not just the middle. A bar-count cap held five minutes up to
+   * about 85 bpm and then quietly gave it back — 4.4 minutes at the top — because a bar
+   * at 120 is a third of a bar at 40 and the limit was written in the wrong unit.
+   */
+  const seen = []
+  for (const bpm of [40, 50, 60, 70, 80, 90, 100, 110, 120]) {
+    const plan = buildPlan(historyAt(bpm), new Date('2026-09-11'))
+    seen.push([bpm, plan.playingSeconds])
+    check(`${bpm} bpm still gets its five minutes`,
+      Math.abs(plan.playingSeconds - SESSION.targetPlayingSeconds) <= 20,
+      `${(plan.playingSeconds / 60).toFixed(1)} min`)
+  }
+
+  // The fault it replaces was a downward slope with tempo, so assert there isn't one.
+  const slowest = seen[0][1]
+  const fastest = seen[seen.length - 1][1]
+  check('the fastest session is not shorter than the slowest',
+    fastest >= slowest - 20, `${slowest}s at the bottom, ${fastest}s at the top`)
+
+  // And a step still cannot run away at a slow tempo.
+  for (const [bpm, ] of seen) {
+    const plan = buildPlan(historyAt(bpm), new Date('2026-09-11'))
+    for (const st of plan.steps) {
+      const ex = EXERCISES.find((e) => e.id === st.id)
+      const secs = st.bars * (ex.beatsPerBar * 60) / st.bpm
+      check(`no single step drags at ${bpm} bpm`, secs <= SESSION.maxStepSeconds,
+        `${st.id} runs ${secs.toFixed(0)}s`)
+    }
+  }
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`)
