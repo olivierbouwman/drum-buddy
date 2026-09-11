@@ -128,6 +128,75 @@ export function days () {
   return { streak, total: keys.length, practisedToday }
 }
 
+/** Monday-start week key, so a week is a week regardless of when she practises in it. */
+function weekStart (t) {
+  const d = new Date(t)
+  d.setHours(0, 0, 0, 0)
+  const dow = (d.getDay() + 6) % 7          // 0 = Monday
+  d.setDate(d.getDate() - dow)
+  return d.getTime()
+}
+
+const dayKey = (t) => {
+  const d = new Date(t)
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+}
+
+/**
+ * Practice measured in WEEKS rather than consecutive days.
+ *
+ * She has a lesson one day a week and will miss others; a daily streak would break
+ * almost immediately and punish her for an ordinary week. Hitting a weekly goal is
+ * something a real practice routine can actually sustain, and it keeps the pull of a
+ * run going without the fragility.
+ *
+ * @param {number} goalDays days per week that count as a good week
+ */
+export function weeks (goalDays = 4) {
+  const list = load()
+  const now = Date.now()
+  const thisWeek = weekStart(now)
+
+  const daysIn = (start) => {
+    const end = start + 7 * 864e5
+    return new Set(list.filter((e) => e.at >= start && e.at < end).map((e) => dayKey(e.at))).size
+  }
+
+  // Which days of the current week have something on them, Monday first.
+  const pattern = []
+  for (let i = 0; i < 7; i++) {
+    const d = thisWeek + i * 864e5
+    pattern.push({
+      done: list.some((e) => dayKey(e.at) === dayKey(d)),
+      future: d > now,
+      today: dayKey(d) === dayKey(now),
+    })
+  }
+
+  const thisWeekDays = daysIn(thisWeek)
+
+  /*
+   * Count back through completed weeks. The CURRENT week never breaks the run — it is
+   * still in progress, and a child should not see her streak die on a Tuesday for a
+   * week she has not finished yet.
+   */
+  let streak = thisWeekDays >= goalDays ? 1 : 0
+  let cursor = thisWeek - 7 * 864e5
+  while (daysIn(cursor) >= goalDays) {
+    streak++
+    cursor -= 7 * 864e5
+  }
+
+  return {
+    pattern,
+    thisWeekDays,
+    goalDays,
+    goalMet: thisWeekDays >= goalDays,
+    weekStreak: streak,
+    totalDays: new Set(list.map((e) => dayKey(e.at))).size,
+  }
+}
+
 export function clear () {
   try { localStorage.removeItem(KEY()) } catch {}
 }

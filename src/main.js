@@ -9,7 +9,7 @@
  * interface without touching anything in here.
  */
 
-import { TEMPO, DRUM_NAV, SCHEDULER, FUSION, CALIBRATION, DETECTOR,
+import { TEMPO, DRUM_NAV, SCHEDULER, FUSION, CALIBRATION, DETECTOR, WEEK,
   LEVELS, LEVEL_STORAGE_KEY, applyLevel } from './config.js'
 import { EXERCISES, byId } from './exercises.js'
 import { AudioEngine } from './audio-engine.js'
@@ -96,18 +96,19 @@ function toast (msg, ms = 3200) {
 $('btn-play').addEventListener('click', async () => {
   $('btn-play').disabled = true
   /*
-   * Go full screen on the way in.
+   * AUDIO FIRST, then full screen.
    *
-   * A browser will not do this on its own — it needs a real gesture — but Play IS one,
-   * so it can ride along and she never sees a separate button. Awaited before anything
-   * else because the resize changes every layout measurement that follows.
+   * Both need the user gesture that got us here, and only one of them matters. Asking
+   * for full screen first consumed the activation and left AudioContext.resume() with
+   * none — on the tablet it simply never resolved, so the screen never changed, no error
+   * was thrown and Play looked dead.
    *
-   * Launched from the home-screen icon this is already full screen and the call is a
-   * no-op; if the browser refuses, the app simply runs in a normal window.
+   * Full screen is fired afterwards and deliberately not awaited: it is cosmetic, and
+   * nothing should wait on it.
    */
-  await goFullscreen()
   try {
-    await engine.start()
+    await withTimeout(engine.start(), 5000, 'audio')
+    goFullscreen()
     clicks = new ClickSource(engine.ctx)
     await clicks.prepare()
     scheduler = new Scheduler(engine, clicks)
@@ -132,10 +133,23 @@ $('btn-play').addEventListener('click', async () => {
     if (wantSelfTest) { showSelfTest(); return }
     await runWarmup()
   } catch (err) {
-    toast('Could not start: ' + err.message)
+    // Never fail silently here. A dead Play button with no explanation is the worst
+    // possible first impression, and it is exactly what happened.
+    toast(err.message === 'audio'
+      ? 'Sound could not start — try tapping Play again'
+      : 'Could not start: ' + err.message, 6000)
     $('btn-play').disabled = false
+    if (debug) console.error('[drum-buddy] start failed:', err)
   }
 })
+
+/** Reject rather than hang. A promise that never settles is invisible from the outside. */
+function withTimeout (promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(label)), ms)),
+  ])
+}
 
 /**
  * Both sensors need the same user gesture that started audio, so they are set up here
@@ -618,13 +632,43 @@ function showToday () {
   state.sessionStars = 0
   state.sessionScores = []
 
-  const { streak, total } = history.days()
-  $('today-streak').textContent = streak > 1
-    ? `🔥 ${streak} days in a row!`
-    : total > 0 ? `${total} day${total === 1 ? '' : 's'} of drumming so far` : 'Your first practice!'
+  renderWeek($('today-streak'))
 
   renderPlan()
   show('today')
+}
+
+/**
+ * This week, as dots.
+ *
+ * Weekly rather than a daily streak: she has a lesson one day a week and will miss
+ * others, and a run that breaks on the first missed day would break constantly and
+ * punish her for an ordinary week. Four days out of seven is a target a real routine
+ * can hit, and the current week never breaks the run — it is not finished yet.
+ */
+function renderWeek (el) {
+  const w = history.weeks(WEEK.goalDays)
+  el.innerHTML = ''
+
+  const dots = document.createElement('span')
+  dots.className = 'weekdots'
+  w.pattern.forEach((d, i) => {
+    const dot = document.createElement('i')
+    if (d.done) dot.className = 'on'
+    else if (d.today) dot.className = 'today'
+    else if (d.future) dot.className = 'ahead'
+    dot.textContent = WEEK.labels[(i + 1) % 7]
+    dots.append(dot)
+  })
+
+  const text = document.createElement('span')
+  if (w.weekStreak > 1) text.textContent = `🔥 ${w.weekStreak} good weeks in a row!`
+  else if (w.goalMet) text.textContent = '🔥 Goal reached this week!'
+  else if (w.totalDays === 0) text.textContent = 'Your first practice!'
+  else text.textContent = `${w.thisWeekDays} of ${w.goalDays} days this week`
+
+  el.append(dots, text)
+  el.setAttribute('aria-label', text.textContent)
 }
 
 function renderPlan () {
@@ -661,14 +705,11 @@ function finishSession () {
   show('session')
   confetti($('session-confetti'), 40)
 
-  const { streak, total } = history.days()
   const best = state.sessionScores.length ? Math.max(...state.sessionScores) : 0
   const stars = Math.min(3, Math.round(state.sessionStars / Math.max(1, state.sessionScores.length)))
 
   $('session-stars').textContent = '⭐'.repeat(stars) + '☆'.repeat(3 - stars)
-  $('session-streak').textContent = streak > 1
-    ? `🔥 ${streak} days in a row!`
-    : `${total} day${total === 1 ? '' : 's'} of drumming`
+  renderWeek($('session-streak'))
 
   const dl = $('session-stats')
   dl.innerHTML = ''
@@ -1387,14 +1428,12 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden && !$('screen-start').classList.contains('on')) keepAwake()
 })
 
-async function goFullscreen () {
+function goFullscreen () {
   if (document.fullscreenElement || installed) return
   if (!document.documentElement.requestFullscreen) return
-  try {
-    await document.documentElement.requestFullscreen({ navigationUI: 'hide' })
-    // Let the resize settle before anything measures the viewport.
-    await sleep(150)
-  } catch { /* refused; the app is perfectly usable in a window */ }
+  // Not awaited by the caller: cosmetic, and nothing should block on it.
+  document.documentElement.requestFullscreen({ navigationUI: 'hide' })
+    .catch(() => { /* refused; the app is perfectly usable in a window */ })
 }
 
 /**
@@ -1556,4 +1595,15 @@ if (debug) {
  * When the app is being served from a developer machine on the same network, post what
  * it is seeing back there. Does nothing at all in the published build.
  */
+/** Anything that blew up, so a silent failure on the tablet is not invisible again. */
+const runtimeErrors = []
+window.addEventListener('error', (e) => {
+  runtimeErrors.push(`${e.message} @ ${e.filename}:${e.lineno}`)
+  if (runtimeErrors.length > 10) runtimeErrors.shift()
+})
+window.addEventListener('unhandledrejection', (e) => {
+  runtimeErrors.push('unhandled: ' + ((e.reason && e.reason.message) || e.reason))
+  if (runtimeErrors.length > 10) runtimeErrors.shift()
+})
+
 startDiagnostics(snapshot)

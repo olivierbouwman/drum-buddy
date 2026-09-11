@@ -15,7 +15,7 @@
  */
 
 import { EXERCISES } from './exercises.js'
-import { TEMPO } from './config.js'
+import { TEMPO, SESSION } from './config.js'
 
 /** An exercise counts as solid after this many steady attempts. */
 const ATTEMPTS_TO_PASS = 3
@@ -105,41 +105,52 @@ export function buildPlan (history) {
   const candidates = solid.filter((e) => e.id !== focus.id)
   const finisher = candidates.length ? candidates[candidates.length - 1] : null
 
-  const steps = [
-    {
-      kind: 'warmup',
-      id: warmUp.id,
-      bars: 6,
-      bpm: Math.max(TEMPO.min, tempoFor(history, warmUp.id) - 10),
-      label: 'Warm up',
-    },
-    {
-      kind: 'focus',
-      id: focus.id,
-      bars: 10,
-      bpm: tempoFor(history, focus.id),
-      label: 'Today’s thing',
-    },
-    {
-      kind: 'focus',
-      id: focus.id,
-      bars: 10,
-      bpm: tempoFor(history, focus.id),
-      label: 'Once more',
-    },
+  /*
+   * Bars are derived from a time target, not fixed.
+   *
+   * Fixed bar counts made the session quietly shorter as she got faster — the same ten
+   * bars take a third less time at 80 BPM than at 60 — and the first version added up to
+   * 2.6 minutes of drumming while claiming five.
+   *
+   * The shares are also normalised over the steps that actually exist. A beginner has no
+   * favourite yet, and without this her session came out a minute shorter than everyone
+   * else's purely because she had one fewer slot to fill.
+   */
+  const warmBpm = Math.max(TEMPO.min, tempoFor(history, warmUp.id) - 10)
+  const focusBpm = tempoFor(history, focus.id)
+  const finBpm = finisher ? tempoFor(history, finisher.id) : null
+
+  const layout = [
+    { kind: 'warmup', ex: warmUp, bpm: warmBpm, weight: SESSION.weights.warmup, label: 'Warm up' },
+    { kind: 'focus', ex: focus, bpm: focusBpm, weight: SESSION.weights.focus, label: 'Today’s thing' },
+    { kind: 'focus', ex: focus, bpm: focusBpm, weight: SESSION.weights.focus, label: 'Once more' },
   ]
   if (finisher) {
-    steps.push({
-      kind: 'finisher',
-      id: finisher.id,
-      bars: 8,
-      bpm: tempoFor(history, finisher.id),
-      label: 'Favourite',
-    })
+    layout.push({ kind: 'finisher', ex: finisher, bpm: finBpm, weight: SESSION.weights.finisher, label: 'Favourite' })
   }
+
+  const totalWeight = layout.reduce((t, l) => t + l.weight, 0)
+  const steps = layout.map((l) => {
+    const secondsPerBar = (l.ex.beatsPerBar * 60) / l.bpm
+    // Each step also carries a count-in, which is playing time she has to sit through.
+    const countIn = 4 * (60 / l.bpm)
+    const want = (SESSION.targetPlayingSeconds * (l.weight / totalWeight) - countIn) / secondsPerBar
+    return {
+      kind: l.kind,
+      id: l.ex.id,
+      bpm: l.bpm,
+      label: l.label,
+      bars: Math.max(SESSION.minBars, Math.min(SESSION.maxBars, Math.round(want))),
+    }
+  })
 
   return {
     steps,
+    playingSeconds: Math.round(steps.reduce((t, st) => {
+      const ex = EXERCISES.find((e) => e.id === st.id)
+      const perBar = (ex.beatsPerBar * 60) / st.bpm
+      return t + st.bars * perBar + 4 * (60 / st.bpm)     // include the count-in
+    }, 0)),
     focusId: focus.id,
     // Worth announcing: a new focus is the closest thing to unlocking something.
     newFocus: progress[focus.id].attempts === 0,

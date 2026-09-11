@@ -39,6 +39,39 @@ export const LEVELS = [
     steady: [28, 45, 70] },
 ]
 
+/**
+ * How long a session should actually be.
+ *
+ * Measured rather than assumed: the first version's bar counts came to 2.6 minutes of
+ * drumming inside a 4-minute session, which is not the five minutes it claimed. Step
+ * lengths are now derived from this target so the label stays true when tempo changes —
+ * a faster tempo means the same bars take less time, and the session would quietly
+ * shrink.
+ *
+ * Five minutes means five minutes of DRUMMING, not five minutes of app. Count-ins,
+ * results screens and calibration sit on top of this.
+ */
+export const SESSION = {
+  targetPlayingSeconds: 300,
+  /** Roughly how the time is shared out; the focus gets the lion's share. */
+  weights: { warmup: 0.18, focus: 0.28, finisher: 0.26 },
+  minBars: 4,
+  maxBars: 34,
+}
+
+/**
+ * Practice is not expected every day.
+ *
+ * She has a lesson once a week and will miss days; a streak that breaks on the first
+ * missed day would break constantly and punish her for a normal week. So the unit is
+ * the WEEK: hit the goal, keep the run going.
+ */
+export const WEEK = {
+  goalDays: 4,
+  /** Days of the week are shown as dots so progress is visible without reading. */
+  labels: ['S', 'M', 'T', 'W', 'T', 'F', 'S'],
+}
+
 export const LEVEL_STORAGE_KEY = 'drum-practice.level.v1'
 
 /** Filled in at start-up from the chosen level; see applyLevel() in main.js. */

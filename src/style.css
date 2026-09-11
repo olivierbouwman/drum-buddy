@@ -406,7 +406,21 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 
 /* ------------------------------------------------------------ today */
 
-.streakline { margin: 0; color: var(--kraft); font-weight: 800; font-size: 1.05rem; }
+.streakline {
+  margin: 0; color: var(--kraft); font-weight: 800; font-size: 1rem;
+  display: flex; flex-direction: column; align-items: center; gap: .35rem;
+}
+/* This week at a glance. Days are dots so it reads without reading. */
+.weekdots { display: flex; gap: .3rem; }
+.weekdots i {
+  width: 1.5rem; height: 1.5rem; border-radius: 50%;
+  display: grid; place-items: center;
+  font-style: normal; font-size: .62rem; font-weight: 800;
+  background: #ffffff14; color: var(--muted); border: 2px solid transparent;
+}
+.weekdots i.on { background: var(--ok); color: #0d3018; }
+.weekdots i.today { border-color: var(--hot); color: var(--ink); }
+.weekdots i.ahead { opacity: .4; }
 
 .plan {
   list-style: none; margin: 0; padding: 0;
