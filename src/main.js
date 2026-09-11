@@ -166,9 +166,6 @@ function startExercise (index) {
   scheduler.onNote((note) => {
     state.notes.push(note)
     state.scorer.addNote(note)
-    // Show the upcoming hand slightly ahead of the note itself.
-    const lead = Math.max(0, engine.audibleAt(note.time) - performance.now() - 260)
-    setTimeout(() => visuals.showHand(note.hand), lead)
   })
 
   scheduler.onEnd(() => finishExercise())
@@ -182,7 +179,31 @@ function startExercise (index) {
   })
 
   scheduler.start(ex, state.bpm)
-  visuals.start((ts) => scheduler.beatPhase(ts))
+  visuals.start((ts) => scheduler.beatPhase(ts), makeHandReader(beatS))
+}
+
+/**
+ * Which hand the ball should be showing right now.
+ *
+ * Only within half a beat of the next note, which is what makes rests work: in the
+ * "Waiting game" the ball lands on beats 2 and 4 with nothing to play, and a letter
+ * sitting there would invite her to hit. Blank means don't.
+ *
+ * The same rule handles eighth notes, where half the notes fall at the top of the arc
+ * rather than on a landing — the letter simply flips as the ball passes the apex.
+ */
+function makeHandReader (beatS) {
+  let cursor = 0
+  return () => {
+    const q = scheduler.noteQueue
+    if (!q) return null
+    const now = engine.now
+    // Retire notes that are properly gone. Forward-only, so this stays cheap.
+    while (cursor < q.length && now - q[cursor].time > 0.12) cursor++
+    const next = q[cursor]
+    if (!next) return null
+    return next.time - now <= 0.55 * beatS ? next.hand : null
+  }
 }
 
 function updateStreak () {
@@ -373,6 +394,9 @@ document.addEventListener('visibilitychange', () => {
 })
 
 if (debug) {
-  window.drumBuddy = { engine, state, get stats () { return state.lastStats } }
+  window.drumBuddy = {
+    engine, state, startExercise, EXERCISES,
+    get stats () { return state.lastStats },
+  }
   console.log('[drum-buddy] debug on — window.drumBuddy')
 }

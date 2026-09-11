@@ -37,10 +37,15 @@ export class Visuals {
     this._lastPad = -1
   }
 
-  start (phaseFn) {
+  /**
+   * @param {(ts:number)=>number} phaseFn  fractional beats since the count-in started
+   * @param {()=>('R'|'L'|null)} handFn    which hand plays the next note, if any
+   */
+  start (phaseFn, handFn) {
     this.stop()
     const tick = (ts) => {
       this.frame(phaseFn(ts))
+      if (handFn) this.showHand(handFn())
       this._raf = requestAnimationFrame(tick)
     }
     this._raf = requestAnimationFrame(tick)
@@ -92,14 +97,29 @@ export class Visuals {
     setTimeout(() => p.classList.remove('hit'), 110)
   }
 
-  /** Highlight which hand plays next. */
+  /**
+   * Which hand plays next.
+   *
+   * The letter lives INSIDE the ball because that is where she is already looking —
+   * the ball is the anticipation cue, and making her glance elsewhere to find the hand
+   * defeats the point. A blank ball means the next landing is a rest: don't hit. The
+   * row below repeats it as a larger, steadier target.
+   */
   showHand (hand) {
+    if (hand !== this._hand) {
+      this._hand = hand
+      this.ball.textContent = hand || ''
+      this.ball.classList.toggle('resting', !hand)
+    }
     for (const el of this.handsEl.children) {
       el.classList.toggle('next', el.dataset.hand === hand)
     }
   }
 
   clearHands () {
+    this._hand = undefined
+    this.ball.textContent = ''
+    this.ball.classList.remove('resting')
     for (const el of this.handsEl.children) el.classList.remove('next')
   }
 

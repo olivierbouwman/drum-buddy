@@ -208,11 +208,23 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 
 .ball {
   position: absolute; left: 0; bottom: 0;
-  width: clamp(2rem, 8vw, 3.2rem); aspect-ratio: 1;
+  width: clamp(2.4rem, 9vw, 3.6rem); aspect-ratio: 1;
   border-radius: 50%;
   background: radial-gradient(circle at 34% 30%, #fffdf6, var(--hot) 55%, #d99a2c);
   box-shadow: 0 0 30px #ffc85799;
   will-change: transform;
+
+  /* The hand letter rides inside the ball. Dark on lantern gold measures 9.3:1. */
+  display: grid; place-items: center;
+  font-family: var(--font); font-weight: 900;
+  font-size: clamp(1rem, 4vw, 1.6rem); line-height: 1;
+  color: #3a2708;
+}
+/* A rest: nothing to play on this landing. Dimmed so the difference is visible even
+   without the letter, rather than relying on absence alone. */
+.ball.resting {
+  background: radial-gradient(circle at 34% 30%, #ffffff, #cfe3ec 55%, #8fa9b6);
+  box-shadow: 0 0 18px #cfe3ec55;
 }
 
 .pads {
@@ -269,9 +281,9 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 
 .hands { display: flex; gap: 1.2rem; flex: 0 0 auto; }
 .hand {
-  width: 3rem; height: 3rem; border-radius: 50%;
+  width: 2.4rem; height: 2.4rem; border-radius: 50%;
   display: grid; place-items: center;
-  font-weight: 900; font-size: 1.2rem;
+  font-weight: 900; font-size: 1rem;
   background: #ffffff14; border: 3px solid var(--line); color: var(--muted);
   transition: transform .1s ease, background-color .1s ease, color .1s ease;
 }
