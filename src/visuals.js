@@ -12,7 +12,9 @@ const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
 
 /** How far ahead she can see, and where on the lane the stick meets the pad. */
 const LOOKAHEAD_BEATS = 2.4
-const STRIKE_AT = 0.82          // fraction of the lane height
+const STRIKE_AT = 0.78          // fraction of the lane height
+const HAND_OUT = 0.42           // how far outside the lane the hand sits, in lane widths
+const HAND_UP = 0.20            // how high the hand sits, as a fraction of the area
 const MAX_SWING_DEG = 62        // how far the stick swings back at the top of the stroke
 const IDLE_LIFT = 0.12          // resting height, so a waiting stick doesn't look dead
 const APEX = 0.62               // fraction of the stroke spent lifting; the rest is the drop
@@ -89,16 +91,27 @@ export class Visuals {
     const lookahead = LOOKAHEAD_BEATS * this.beatS
     const pxPerSecond = strikeY / lookahead
 
-    // Hinge the stick above its own strike point, long enough that the tip rests
-    // exactly on the line when the stroke lands.
-    const stickLen = Math.max(40, Math.min(strikeY * 0.55, height * 0.34))
-    this._stickLen = stickLen
+    /*
+     * Place each stick: hand OUTSIDE its lane, bead on the middle of the pad. The stick
+     * is the line between those two points, and the hand is the pivot — so its length
+     * and resting angle both fall out of the geometry rather than being guessed.
+     */
     for (const hand of ['L', 'R']) {
       const lane = this.lanes[hand]
       lane.strike.style.top = strikeY + 'px'
       if (lane.pad) lane.pad.style.top = strikeY + 'px'
-      lane.stick.style.height = stickLen + 'px'
-      lane.stick.style.top = (strikeY - stickLen) + 'px'
+
+      const w = lane.notes.getBoundingClientRect().width || 100
+      const pivotX = hand === 'L' ? -w * HAND_OUT : w * (1 + HAND_OUT)
+      const pivotY = height * HAND_UP
+      const dx = w * 0.5 - pivotX
+      const dy = strikeY - pivotY
+      const len = Math.hypot(dx, dy)
+
+      lane.geom = { pivotX, pivotY, len, restDeg: (Math.atan2(-dx, dy) * 180) / Math.PI }
+      lane.stick.style.left = pivotX + 'px'
+      lane.stick.style.top = pivotY + 'px'
+      lane.stick.style.height = len + 'px'
     }
 
     for (const n of this.notes) {
@@ -152,22 +165,35 @@ export class Visuals {
     }
 
     /*
-     * Lift is a ROTATION about the hand, not a slide. The tip swings up and away from
-     * the pad and comes back down onto it, which is the motion a wrist actually makes.
-     * Left and right swing outwards, mirroring each other.
+     * Lift is a ROTATION about the hand, not a slide — the motion a wrist actually
+     * makes. At rest the bead sits on the pad; lifting swings it up and OUTWARD, away
+     * from the other stick, so the two never look like they are colliding.
+     *
+     * A positive CSS rotation moves the bead toward -x, which is why left and right
+     * take opposite signs here.
      */
-    // Verified against the rendered result rather than assumed: this sign sends each
-    // stick outward, away from its neighbour, so the two never appear to collide.
+    const g = lane.geom
+    if (!g) return
     const away = hand === 'L' ? 1 : -1
-    const angle = lift * MAX_SWING_DEG * away
+    const angle = g.restDeg + lift * MAX_SWING_DEG * away
     lane.stick.style.transform = `translateX(-50%) rotate(${angle.toFixed(1)}deg)`
   }
 
-  /** Flash the strike line for a hand. */
-  flashPad (hand) {
+  /**
+   * Light the pad she just struck, coloured by how close it was.
+   *
+   * One more channel on top of the words, the emoji and the dot — never the only one,
+   * and never red: red/green is the commonest colour-blindness axis, and a red flash
+   * would read as failure in an app whose harshest verdict is "Almost!".
+   */
+  flashPad (hand, kind = 'great') {
     const lane = this.lanes[hand] || this.lanes.R
-    lane.strike.classList.add('hit')
-    setTimeout(() => lane.strike.classList.remove('hit'), 110)
+    const pad = lane.pad
+    if (!pad) return
+    pad.classList.remove('k-perfect', 'k-great', 'k-almost', 'k-off')
+    pad.classList.add('lit', 'k-' + kind)
+    clearTimeout(lane.padTimer)
+    lane.padTimer = setTimeout(() => pad.classList.remove('lit'), 160)
   }
 
   showHand () { /* the lanes and the sticks carry this now */ }

@@ -189,7 +189,13 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 
 /* ------------------------------------------------------------- practice */
 
-#screen-play { justify-content: space-between; }
+#screen-play {
+  justify-content: space-between;
+  gap: .5rem;
+  /* Nothing on this screen may overflow: an old tablet in landscape has very little
+     height, and a cut-off button is a dead end for a child. */
+  overflow: hidden;
+}
 
 .bar {
   width: 100%; display: flex; align-items: center; justify-content: space-between;
@@ -212,11 +218,12 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 .count-words { display: none; }
 
 .ball-area {
-  position: relative; width: 100%; flex: 1 1 auto;
-  min-height: 30vh; max-height: 38vh;
+  position: relative; width: 100%;
+  /* Absorb whatever height is left rather than claiming a fixed slice. On a short
+     landscape tablet a vh-based height pushed the buttons off the bottom. */
+  flex: 1 1 auto; min-height: 0;
   display: flex; align-items: flex-end;
   overflow: visible;
-  min-height: 34vh; max-height: 46vh;
 }
 
 /* Count-in sits over the ball area, big enough to read from across the room. */
@@ -271,7 +278,27 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
   background: radial-gradient(ellipse at 50% 35%, #4a5f6b, #2b3a44);
   box-shadow: 0 3px 0 #0006, inset 0 2px 4px #ffffff14;
   transform: translateY(-50%);
+  transition: background-color .05s ease, box-shadow .05s ease, transform .05s ease;
 }
+/*
+ * How close the hit was, as a colour ramp on the pad.
+ *
+ * Deliberately green -> gold -> amber rather than green -> red. Red/green is the
+ * commonest colour-blindness axis, so a ramp built on it is unreadable to some people;
+ * and a red flash reads as failure, which breaks the rule that the worst thing this app
+ * ever says is "Almost!". The ramp also brightens and swells as accuracy improves, so
+ * it survives being seen in greyscale — and it is never the only signal: the words, the
+ * emoji and the dot on the lane all say the same thing.
+ */
+.lane .pad.lit {
+  transform: translateY(-50%) scale(var(--swell, 1.06));
+  background: radial-gradient(ellipse at 50% 35%, var(--flash), var(--flash));
+  box-shadow: 0 3px 0 #0006, 0 0 26px var(--flash);
+}
+.lane .pad.k-perfect { --flash: #7cf59f; --swell: 1.22; }
+.lane .pad.k-great   { --flash: #ffd76a; --swell: 1.16; }
+.lane .pad.k-almost  { --flash: #f5a068; --swell: 1.10; }
+.lane .pad.k-off     { --flash: #c98f7a; --swell: 1.04; }
 .lane .notes { position: absolute; inset: 0; overflow: hidden; border-radius: 14px; }
 .note {
   position: absolute; left: 8%; right: 8%; height: 14px;
@@ -299,25 +326,41 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 /*
  * The stick.
  *
- * Hinged at the TOP — the hand — and hanging down so its tip rests on the strike line,
- * which is how a stick actually pivots. Lifting swings the tip up and away; striking
- * brings it back down onto the line. Anchoring it at the bottom, or sliding it up and
- * down, would show her a motion no drummer makes.
+ * Held at the butt OUTSIDE its lane, angled in and down so the bead lands on the middle
+ * of the pad — which is how a stick is actually held and where it actually strikes. The
+ * pivot is the hand, so lifting swings the bead up and outward and the stroke brings it
+ * back down onto the pad.
  */
 .stick {
-  position: absolute; left: 50%; top: 0;
-  width: 10px; border-radius: 5px 5px 4px 4px;
-  background: linear-gradient(180deg, #f0d6b0, #d3a874 55%, #a87840);
-  box-shadow: 0 3px 8px #0007;
+  position: absolute;
+  width: 16px;
   transform-origin: 50% 0;
   will-change: transform;
-  z-index: 2;
+  z-index: 3;
+  pointer-events: none;
 }
-/* A small hand at the pivot, so it reads as held rather than floating. */
-.stick::before {
-  content: ''; position: absolute; left: 50%; top: -5px;
-  width: 20px; height: 20px; margin-left: -10px;
-  border-radius: 50%; background: #6b4c2f; box-shadow: 0 2px 6px #0007;
+/* Tapered shaft: thicker at the hand, thinner toward the bead, like a real stick. */
+.stick .shaft {
+  position: absolute; inset: 0;
+  clip-path: polygon(26% 0%, 74% 0%, 62% 100%, 38% 100%);
+  background: linear-gradient(180deg, #caa276 0%, #eed7b2 22%, #dcb489 62%, #c1945f 100%);
+  box-shadow: 0 3px 10px #00000066;
+}
+/* The bead — the bit that actually hits the pad. */
+.stick .bead {
+  position: absolute; left: 50%; bottom: -6px;
+  width: 14px; height: 15px; margin-left: -7px;
+  border-radius: 50% 50% 45% 45%;
+  background: radial-gradient(circle at 36% 30%, #f6e3c4, #d9ab74 60%, #ac7f4c);
+  box-shadow: 0 2px 6px #00000055;
+}
+/* The hand, at the butt, outside the lane. */
+.stick .grip {
+  position: absolute; left: 50%; top: -6px;
+  width: 26px; height: 22px; margin-left: -13px;
+  border-radius: 46% 46% 42% 42%;
+  background: linear-gradient(180deg, #8a6340, #5d4028);
+  box-shadow: 0 3px 8px #00000066;
 }
 
 /* verdict --------------------------------------------------------- */
@@ -440,6 +483,37 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 @keyframes drift {
   0%   { transform: translate(0, -6vh); }
   100% { transform: translate(var(--sway, 20px), 108vh); }
+}
+
+/* ------------------------------------------ short landscape screens */
+
+/*
+ * Older tablets in landscape have very little vertical room — around 600 CSS pixels
+ * once browser chrome is counted. Everything below buys height back, in order of what
+ * can be given up most cheaply: first the technique tip (useful but not needed mid-
+ * exercise), then the band, then the chrome around everything else.
+ */
+@media (max-height: 720px) {
+  :root { --pad: .7rem; }
+  .screen { gap: .35rem; }
+  .ex-tip { font-size: .78rem; max-height: 2.4em; overflow: hidden; }
+  .verdict-lane { height: 2.6rem; }
+  .band-row .member { font-size: clamp(1.4rem, 5vw, 2rem); }
+  .member.lead { font-size: clamp(1.9rem, 7vw, 2.6rem); }
+  .lane .handtag { font-size: .9rem; bottom: .1rem; }
+  #screen-play .bar { font-size: .85rem; }
+  .huge { font-size: clamp(1.1rem, 4vw, 1.5rem); padding: .55em 1.3em; }
+  .scoreboard { font-size: .82rem; gap: .15rem .9rem; }
+  .stars { font-size: clamp(1.8rem, 8vw, 2.6rem); }
+  .score-value { font-size: clamp(2rem, 9vw, 3.2rem); }
+}
+
+@media (max-height: 600px) {
+  .ex-tip { display: none; }              /* the exercise name still says what to do */
+  .band-row { display: none; }            /* the streak counter still shows progress */
+  .verdict-lane { height: 2.2rem; }
+  .logo { font-size: clamp(2rem, 9vw, 3.2rem); }
+  .fineprint { display: none; }
 }
 
 /* ------------------------------------------------- reduced motion */

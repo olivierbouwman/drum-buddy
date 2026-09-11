@@ -109,7 +109,8 @@ var OnsetDetector = class {
 	* bands.
 	*/
 	get needAgree() {
-		return Math.max(Math.min(3, this.enabledCount), Math.min(this.enabledCount, Math.round(this.enabledCount * .7)));
+		const f = this.cfg.agreeFraction || .7;
+		return Math.max(Math.min(3, this.enabledCount), Math.min(this.enabledCount, Math.round(this.enabledCount * f)));
 	}
 	/**
 	* @param {Float32Array} block

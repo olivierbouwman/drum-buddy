@@ -138,8 +138,9 @@ export class OnsetDetector {
    * bands.
    */
   get needAgree () {
+    const f = this.cfg.agreeFraction || 0.7
     return Math.max(Math.min(3, this.enabledCount),
-      Math.min(this.enabledCount, Math.round(this.enabledCount * 0.7)))
+      Math.min(this.enabledCount, Math.round(this.enabledCount * f)))
   }
 
   /**

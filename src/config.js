@@ -149,7 +149,13 @@ export const CALIBRATION = {
    */
   warnAboveMs: 250,
   refuseAboveMs: 600,
-  refuseIfSpreadAboveMs: 12,
+  /**
+   * How much the measured latency may wander before it stops being trusted as exact.
+   * Loosened from 12 ms: this only decides whether the number is called measured or
+   * approximate, and 25 ms is still comfortably inside the 70 ms "perfect" window, so
+   * a slightly restless device gets graded rather than ignored.
+   */
+  refuseIfSpreadAboveMs: 25,
   storageKey: 'drum-practice.latency.v1',
 }
 

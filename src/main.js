@@ -221,6 +221,25 @@ function seedStoredLatency () {
   } catch { /* storage unavailable or corrupt; a seed is optional */ }
 }
 
+/**
+ * Guarantee a latency value exists, so nothing downstream ever has to cope with "we
+ * don't know". Ordered best to worst: a live measurement, last session's, the browser's
+ * own output-latency estimate doubled to stand in for the return trip.
+ */
+function ensureLatency () {
+  if (timing.usable) return
+  let seconds = null
+  try {
+    const raw = localStorage.getItem(CALIBRATION.storageKey)
+    if (raw) {
+      const v = JSON.parse(raw)
+      if (v && typeof v.latencyMs === 'number') seconds = v.latencyMs / 1000
+    }
+  } catch { /* storage unavailable */ }
+  if (seconds === null) seconds = (engine.outputLatency || 0.02) * 2
+  timing.setEstimated(seconds)
+}
+
 function storeLatency () {
   try {
     if (timing && timing.usable) {
@@ -422,15 +441,23 @@ function startExercise (index) {
     }
     if (autoTune && hit.levels) autoTune.sampleHit(hit.levels)
 
-    if (!timing.usable) {
-      // Refuse to grade until the latency is known. Reporting timing against an
-      // unmeasured 350 ms delay would mark a perfectly good hit as hopelessly late.
-      visuals.missed()
-      return
-    }
+    /*
+     * Always give her feedback.
+     *
+     * This used to refuse to grade until the latency was certified, on the theory that
+     * a wrong number is worse than none. In practice it was far worse than that: every
+     * hit was dropped before it reached the scorer, so she drummed into a screen that
+     * never responded — while the end-of-exercise summary still read the raw hit list
+     * and cheerfully reported "32 of 32". Silence looks like the app is broken, and it
+     * hides the fact that detection was working perfectly the whole time.
+     *
+     * The latency is now always set to SOMETHING — a live measurement when there is one,
+     * otherwise the value measured last session or the browser's own estimate — and
+     * anything approximate is labelled rather than hidden.
+     */
     const res = state.scorer.feed(corrected)
     if (!res) return
-    visuals.flashPad(res.note.hand)
+    visuals.flashPad(res.note.hand, res.kind)
     visuals.showVerdict(res.errorMs)
     updateStreak()
   })
@@ -450,15 +477,16 @@ function startExercise (index) {
   visuals.setup(ex, scheduler.noteQueue)
   visuals.start(() => engine.audibleNow())
 
-  // By the end of the count-in the microphone should have heard several clicks. If it
-  // hasn't, the volume is down or the speaker is muted — say so, because otherwise she
-  // just plays into a screen that never responds.
+  // Make sure there is always a usable latency before the first note. A live
+  // measurement is best, last session's is good, the browser's estimate is a poor third
+  // — but any of them beats leaving her without feedback.
+  ensureLatency()
   clearTimeout(calibWatch)
   calibWatch = setTimeout(() => {
-    if (scheduler.running && !timing.usable) {
-      toast(timing.status === 'unstable'
-        ? 'The beat keeps shifting — let’s try again in a moment'
-        : 'I can’t hear the beep — is the volume up?', 6000)
+    if (!scheduler.running) return
+    ensureLatency()
+    if (timing.approximate) {
+      toast('I can’t hear the beep clearly — timing is a rough guess', 5000)
     }
   }, (SCHEDULER.countInBeats + 1) * beatS * 1000)
 }
