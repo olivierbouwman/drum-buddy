@@ -24,6 +24,7 @@ export class MotionInput extends InputSource {
     this.peak = 0
     this.rising = false
     this.lastHit = -1e9
+    this.lastPeak = 0
     this.rateHz = 0
     this._samples = 0
     this._since = 0
@@ -36,6 +37,7 @@ export class MotionInput extends InputSource {
   setSensitive (on) {
     this.sensitive = !!on
     this.lastHit = -1e9
+    this.lastPeak = 0
   }
 
   /** Live magnitude relative to the trigger threshold, for the on-screen meter. */
@@ -157,8 +159,14 @@ export class MotionInput extends InputSource {
       if (mag > this.peak) { this.peak = mag; this.peakAt = now }
       this.rising = true
     } else if (this.rising) {
-      if (this.peakAt - this.lastHit > MOTION.refractoryMs / 1000) {
+      const since = this.peakAt - this.lastHit
+      // Close behind another hit and much weaker than it: the tablet still ringing, or
+      // the stick bouncing. See MOTION.reboundMs.
+      const rebound = since < MOTION.reboundMs / 1000 &&
+                      this.peak < this.lastPeak * MOTION.reboundRatio
+      if (since > MOTION.refractoryMs / 1000 && !rebound) {
         this.lastHit = this.peakAt
+        this.lastPeak = this.peak
         this.emit({
           time: this.peakAt,
           onsetTime: this.onsetAt,

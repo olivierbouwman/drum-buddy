@@ -133,6 +133,21 @@ export const DETECTOR = {
    * through while a fixed 150 ms would swallow genuinely fast playing.
    */
   refractoryMs: 120,
+  /*
+   * The rebound rule.
+   *
+   * A single strike on her pad logged twice: the second event 167 ms after the first at
+   * 22% of its strength, clearing the 120 ms refractory by a comfortable margin and
+   * checking off two of the four warm-up dots for one hit. Widening the refractory to
+   * cover it would start swallowing real notes, so this discriminates on shape instead:
+   * a rebound is both close AND much weaker, and a real stroke is not.
+   *
+   * Her two genuine consecutive hits in the same log were 1078 ms and 1298 ms apart, so
+   * 250 ms is nowhere near them; eighth notes at 90 bpm are 333 ms. Worth revisiting if
+   * she ever plays ghost notes, where a deliberately quiet stroke follows a loud one.
+   */
+  reboundMs: 250,
+  reboundRatio: 0.5,
   /**
    * Stick bounce rejection. Careful here: the second note of a DOUBLE stroke is a real
    * note and is often quieter than the first, so these thresholds must stay well below
@@ -188,6 +203,21 @@ export const MOTION = {
   calibrateOverSpread: 0.6,
   calibrateMinThreshold: 0.06,
   refractoryMs: 120,
+  /*
+   * The rebound rule.
+   *
+   * A single strike on her pad logged twice: the second event 167 ms after the first at
+   * 22% of its strength, clearing the 120 ms refractory by a comfortable margin and
+   * checking off two of the four warm-up dots for one hit. Widening the refractory to
+   * cover it would start swallowing real notes, so this discriminates on shape instead:
+   * a rebound is both close AND much weaker, and a real stroke is not.
+   *
+   * Her two genuine consecutive hits in the same log were 1078 ms and 1298 ms apart, so
+   * 250 ms is nowhere near them; eighth notes at 90 bpm are 333 ms. Worth revisiting if
+   * she ever plays ghost notes, where a deliberately quiet stroke follows a loud one.
+   */
+  reboundMs: 250,
+  reboundRatio: 0.5,
   /**
    * The microphone still times a hit when it can: it is sample-accurate and this is
    * not. But measured on the real tablet this sensor reaches 30 ms of spread, which is

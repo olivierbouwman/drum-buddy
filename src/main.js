@@ -947,7 +947,7 @@ function armDrumToStart () {
 
   let recent = []
   let armed = false
-  todayWatch = { threshold: +threshold.toFixed(3), seen: 0, tooSoon: 0, tooSoft: 0, kept: 0, strengths: [] }
+  todayWatch = { threshold: +threshold.toFixed(3), seen: 0, tooSoon: 0, tooSoft: 0, kept: 0, maxRecent: 0, strengths: [], ctxTimes: [] }
   const timer = setTimeout(() => { armed = true }, DRUM_NAV.armDelayMs)
   const off = onHits((hit) => {
     /*
@@ -963,9 +963,24 @@ function armDrumToStart () {
     if (!armed) { todayWatch.tooSoon++; return }
     if (typeof hit.strength === 'number' && hit.strength < threshold) { todayWatch.tooSoft++; return }
     todayWatch.kept++
-    const now = hit.time * 1000
+    /*
+     * performance.now(), not the hit's AudioContext time.
+     *
+     * Twelve hits were accepted here and the window never filled, which can only mean
+     * consecutive hits looked more than a second and a half apart — or that subtracting
+     * them produced something that is not a number, since NaN < withinMs is false and
+     * quietly empties the list on every hit. Both are properties of the measurement
+     * clock, and this is not a measurement. Whether she hit the pad three times just now
+     * is a question about wall time, so it uses the wall clock, and the invariant this
+     * codebase runs on says exactly that: AudioContext time for anything scored,
+     * performance.now() for everything else.
+     */
+    const now = performance.now()
     recent = recent.filter((t) => now - t < DRUM_NAV.withinMs)
     recent.push(now)
+    todayWatch.maxRecent = Math.max(todayWatch.maxRecent || 0, recent.length)
+    // Kept so the next run can show what the old clock would have done.
+    if (todayWatch.ctxTimes.length < 12) todayWatch.ctxTimes.push(+(hit.time * 1000).toFixed(1))
     if (recent.length >= DRUM_NAV.hitsNeeded) startSession()
   })
   disarmToday = () => { clearTimeout(timer); off(); disarmToday = () => {} }
