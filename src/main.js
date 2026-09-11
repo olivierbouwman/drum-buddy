@@ -404,8 +404,14 @@ async function runWarmup () {
   $('warmup-msg').textContent = 'Now hit your pad 4 times!'
 
   let got = 0
+  warmupHits = []
   const off = onHits((hit) => {
     lastHitAt = hit.time
+    // One strike checking off two dots means two events for one hit; the gap between
+    // them says whether it is the sensor ringing or a listener subscribed twice.
+    if (warmupHits.length < 30) {
+      warmupHits.push([+hit.time.toFixed(3), +(hit.strength || 0).toFixed(2), hit.source])
+    }
     /*
      * These count toward how hard she plays. Without them the drum-to-start and
      * drum-to-continue shortcuts never arm on a fresh session: they refuse to guess at
@@ -421,6 +427,7 @@ async function runWarmup () {
     got++
     if (got === 4) {
       off()
+      clearTimeout(bail)             // finished: stop the 15-second rescue
       $('warmup-msg').textContent = 'Got it! 🎉'
       applyAutoTune()
       setTimeout(showToday, 700)
@@ -428,7 +435,9 @@ async function runWarmup () {
   })
 
   // Never strand her here: if the pad is too quiet or the mic is blocked, go anyway.
-  const bail = setTimeout(() => {
+  // eslint-disable-next-line prefer-const
+  let bail
+  bail = setTimeout(() => {
     if (got < 4) {
       off()
       if (got === 0) toast('I couldn’t hear your drum — you can tap the screen too', 5000)
@@ -922,11 +931,15 @@ function startSession () {
  */
 let disarmToday = () => {}
 
+let todayWatch = null
+let warmupHits = []
+
 function armDrumToStart () {
   const threshold = deliberateHitThreshold()
   const hint = $('today-hint')
   if (threshold === null) {
     if (hint) hint.textContent = ''
+    todayWatch = { threshold: null, samples: state.hitStrengths.length }
     disarmToday = () => {}
     return
   }
@@ -934,10 +947,22 @@ function armDrumToStart () {
 
   let recent = []
   let armed = false
+  todayWatch = { threshold: +threshold.toFixed(3), seen: 0, tooSoon: 0, tooSoft: 0, kept: 0, strengths: [] }
   const timer = setTimeout(() => { armed = true }, DRUM_NAV.armDelayMs)
   const off = onHits((hit) => {
-    if (!armed) return
-    if (typeof hit.strength === 'number' && hit.strength < threshold) return
+    /*
+     * Counted at every stage, because "hit your pad three times" not working has three
+     * completely different causes that look identical from the outside: no hits
+     * arriving at all, hits arriving before the screen arms, or hits arriving and being
+     * judged too soft. Guessing between them has cost two rounds of testing.
+     */
+    todayWatch.seen++
+    if (todayWatch.strengths.length < 25 && typeof hit.strength === 'number') {
+      todayWatch.strengths.push(+hit.strength.toFixed(2))
+    }
+    if (!armed) { todayWatch.tooSoon++; return }
+    if (typeof hit.strength === 'number' && hit.strength < threshold) { todayWatch.tooSoft++; return }
+    todayWatch.kept++
     const now = hit.time * 1000
     recent = recent.filter((t) => now - t < DRUM_NAV.withinMs)
     recent.push(now)
@@ -1424,7 +1449,16 @@ function deliberateHitThreshold () {
    */
   if (xs.length < 4) return null
   const sorted = [...xs].sort((a, b) => a - b)
-  return sorted[Math.floor(sorted.length * 0.25)]
+  /*
+   * Six tenths of her quietest quarter, not the quarter itself.
+   *
+   * The warm-up says "hit your pad four times", which invites firm hits; carrying on to
+   * the next thing is a casual tap. Setting the bar at the warm-up's own level asks her
+   * to be as emphatic as she was when told to be. The gesture is already specific in
+   * time — three hits inside a second and a half — and that is what stops a stray jolt,
+   * not the loudness.
+   */
+  return sorted[Math.floor(sorted.length * 0.25)] * 0.6
 }
 
 function armDrumToContinue () {
@@ -1850,6 +1884,8 @@ function snapshot () {
       // milliseconds means motion timing has to go through engine.nowFine.
       clockStepMs: engine.clockStepMs ? Math.round(engine.clockStepMs) : null,
       padDelayRefused,
+      todayWatch,
+      warmupHits,
       trackLatencyMs: mic && mic.stream
         ? Math.round(((mic.stream.getAudioTracks()[0].getSettings() || {}).latency || 0) * 1000)
         : null,
