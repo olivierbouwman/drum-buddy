@@ -94,6 +94,18 @@ export class AudioEngine {
     return t * 1000 + this.clockOffset
   }
 
+  /**
+   * The AudioContext time whose sound is reaching her ears right now.
+   *
+   * The inverse of audibleAt(). Animation runs against this rather than currentTime, so
+   * a note drawn arriving at the strike line is the note she is hearing, not the one
+   * the graph is busy rendering some tens of milliseconds ahead.
+   */
+  audibleNow () {
+    if (this.clockOffset === null) return this.now
+    return (performance.now() - this.clockOffset) / 1000
+  }
+
   async close () {
     clearInterval(this._clockTimer)
     if (this.ctx) await this.ctx.close()

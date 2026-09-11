@@ -204,7 +204,7 @@ export function applyLevel (level) {
  * nothing but a person makes.
  */
 export const DRUM_NAV = {
-  armDelayMs: 1500,     // ignore hits for this long after a screen appears
+  armDelayMs: 2000,     // ignore hits for this long after a screen appears
   hitsNeeded: 3,
   withinMs: 1500,
 }

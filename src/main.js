@@ -56,6 +56,8 @@ const state = {
   hits: [],
   notes: [],
   lastStats: null,
+  /** How hard she actually hits, so room noise can be told apart from a real strike. */
+  hitStrengths: [],
 }
 
 // ------------------------------------------------------------------ screens
@@ -374,9 +376,6 @@ function startExercise (index) {
 
   deafnessHandled = false
   loudSince = 0
-  visuals.setup(ex.beatsPerBar, SCHEDULER.countInBeats + ex.beatsPerBar * ex.bars,
-    ex.count.trim().split(/\s+/))
-  visuals.clearHands()
   renderBand(0)
   $('streak').innerHTML = '<b>0</b> in a row'
 
@@ -417,6 +416,10 @@ function startExercise (index) {
     const corrected = { ...hit, time: timing.correct(hit.time) }
     state.hits.push(corrected)
     lastHitAt = hit.time
+    if (typeof hit.strength === 'number') {
+      state.hitStrengths.push(hit.strength)
+      if (state.hitStrengths.length > 120) state.hitStrengths.shift()
+    }
     if (autoTune && hit.levels) autoTune.sampleHit(hit.levels)
 
     if (!timing.usable) {
@@ -427,6 +430,7 @@ function startExercise (index) {
     }
     const res = state.scorer.feed(corrected)
     if (!res) return
+    visuals.flashPad(res.note.hand)
     visuals.showVerdict(res.errorMs)
     updateStreak()
   })
@@ -439,7 +443,12 @@ function startExercise (index) {
   if (mic && mic.available) mic.setRefractoryMs(refractoryForSpacing(minGap * beatS))
 
   scheduler.start(ex, state.bpm)
-  visuals.start((ts) => scheduler.beatPhase(ts), makeHandReader(beatS))
+
+  // The lanes need every note up front so they can fall into view ahead of time; the
+  // scheduler works the whole exercise out when it starts.
+  visuals.beatS = beatS
+  visuals.setup(ex, scheduler.noteQueue)
+  visuals.start(() => engine.audibleNow())
 
   // By the end of the count-in the microphone should have heard several clicks. If it
   // hasn't, the volume is down or the speaker is muted — say so, because otherwise she
@@ -452,30 +461,6 @@ function startExercise (index) {
         : 'I can’t hear the beep — is the volume up?', 6000)
     }
   }, (SCHEDULER.countInBeats + 1) * beatS * 1000)
-}
-
-/**
- * Which hand the ball should be showing right now.
- *
- * Only within half a beat of the next note, which is what makes rests work: in the
- * "Waiting game" the ball lands on beats 2 and 4 with nothing to play, and a letter
- * sitting there would invite her to hit. Blank means don't.
- *
- * The same rule handles eighth notes, where half the notes fall at the top of the arc
- * rather than on a landing — the letter simply flips as the ball passes the apex.
- */
-function makeHandReader (beatS) {
-  let cursor = 0
-  return () => {
-    const q = scheduler.noteQueue
-    if (!q) return null
-    const now = engine.now
-    // Retire notes that are properly gone. Forward-only, so this stays cheap.
-    while (cursor < q.length && now - q[cursor].time > 0.12) cursor++
-    const next = q[cursor]
-    if (!next) return null
-    return next.time - now <= 0.55 * beatS ? next.hand : null
-  }
 }
 
 function updateStreak () {
@@ -707,18 +692,42 @@ function nextExercise () {
 }
 
 /**
- * "Hit twice to keep going." She is holding sticks; making her put them down to tap a
- * screen between every exercise is real friction. Armed on a delay so the last hit of
- * the exercise she just played can't skip her ahead.
+ * "Hit your pad to keep going." She is holding sticks; making her put them down to tap
+ * a screen between every exercise is real friction.
+ *
+ * Counting bare detections was not enough — it fired on room noise repeatedly and
+ * skipped her ahead on its own. Detections are cheap; DELIBERATE ones are not. So a hit
+ * only counts if it is as hard as the way she actually plays, measured from this
+ * session rather than from a guess. Until there are enough of her hits to know that,
+ * the shortcut stays off entirely and the buttons do the work.
  */
 let disarm = () => {}
+
+/** A quarter of her hits are softer than this, so noise almost never reaches it. */
+function deliberateHitThreshold () {
+  const xs = state.hitStrengths
+  if (xs.length < 8) return null            // not enough evidence; don't guess
+  const sorted = [...xs].sort((a, b) => a - b)
+  return sorted[Math.floor(sorted.length * 0.25)]
+}
+
 function armDrumToContinue () {
+  const threshold = deliberateHitThreshold()
+  const hint = $('done-hint')
+  if (threshold === null) {
+    if (hint) hint.textContent = ''
+    disarm = () => {}
+    return
+  }
+  if (hint) hint.textContent = `Hit your pad ${DRUM_NAV.hitsNeeded} times to keep going`
+
   let recent = []
   let armed = false
   const timer = setTimeout(() => { armed = true }, DRUM_NAV.armDelayMs)
 
   const off = onHits((hit) => {
     if (!armed) return
+    if (typeof hit.strength === 'number' && hit.strength < threshold) return
     const now = hit.time * 1000
     recent = recent.filter((t) => now - t < DRUM_NAV.withinMs)
     recent.push(now)

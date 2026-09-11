@@ -215,10 +215,8 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
   position: relative; width: 100%; flex: 1 1 auto;
   min-height: 30vh; max-height: 38vh;
   display: flex; align-items: flex-end;
-  overflow: hidden;                     /* the strip runs past both edges */
-  /* Fade the strip out at the edges so cells arrive and leave instead of popping. */
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  overflow: visible;
+  min-height: 34vh; max-height: 46vh;
 }
 
 /* Count-in sits over the ball area, big enough to read from across the room. */
@@ -251,34 +249,75 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
   box-shadow: 0 0 18px #cfe3ec55;
 }
 
-/* The beat strip. Wider than the screen and slid leftward each frame, so the ball can
-   bounce in one place instead of flying back across at the end of every bar. */
-.pads {
-  position: absolute; left: 0; bottom: 0;
-  display: flex; align-items: flex-end;
+/* Two lanes, one per hand.
+   Notes fall toward a strike line and the stick meets them there. Which hand plays is
+   carried by WHICH LANE a note is in, by the letter on the lane, and by the stick that
+   moves — three channels, none of them colour. */
+.lanes {
+  position: absolute; inset: 0;
+  display: flex; justify-content: center; gap: clamp(1rem, 6vw, 4rem);
+}
+.lane {
+  position: relative;
+  width: clamp(5.5rem, 20vw, 10rem);
+  border-radius: 14px;
+  background: linear-gradient(180deg, transparent, #ffffff0d 70%);
+  box-shadow: inset 0 0 0 2px #ffffff12;
+}
+/* The pad itself, sitting on the strike line, so the stick has something to land on. */
+.lane .pad {
+  position: absolute; left: 10%; right: 10%; height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 35%, #4a5f6b, #2b3a44);
+  box-shadow: 0 3px 0 #0006, inset 0 2px 4px #ffffff14;
+  transform: translateY(-50%);
+}
+.lane .notes { position: absolute; inset: 0; overflow: hidden; border-radius: 14px; }
+.note {
+  position: absolute; left: 8%; right: 8%; height: 14px;
+  border-radius: 8px;
+  background: var(--kraft);
+  box-shadow: 0 2px 0 #00000040;
   will-change: transform;
 }
-.cell {
-  width: var(--cell, 6rem); flex: 0 0 auto;
-  display: flex; flex-direction: column; align-items: center; gap: .45rem;
+.note.done { background: #ffffff2b; }
+
+/* Where the stick meets the pad. */
+.lane .strike {
+  position: absolute; left: 4%; right: 4%; height: 5px; border-radius: 3px;
+  background: #ffffff33;
+  transition: background-color .08s ease, box-shadow .08s ease;
 }
-/* Beat 1 of each bar gets a brighter pad, so she can see the bar turning over. */
-.cell.downbeat .p { border-color: var(--kraft); background: #ffffff33; }
-.cell .w {
-  display: flex; justify-content: space-around; width: 100%;
-  font-size: clamp(.8rem, 3vw, 1.2rem); font-weight: 800; color: var(--quick);
+.lane .strike.hit { background: var(--hot); box-shadow: 0 0 20px #ffc857aa; }
+
+.lane .handtag {
+  position: absolute; left: 0; right: 0; bottom: .3rem;
+  text-align: center; font-weight: 900; font-size: 1.1rem; color: var(--muted);
+  letter-spacing: .08em;
 }
-.cell .w span { flex: 1 1 0; text-align: center; }
-.cell .w span.soft { opacity: .5; }
-.pads .p {
-  width: 74%; height: 16px; border-radius: 10px;
-  background: #ffffff26; border: 3px solid var(--line);
-  box-shadow: inset 0 2px 0 #ffffff1f;
-  transition: background-color .1s ease, transform .1s ease, box-shadow .1s ease;
+
+/*
+ * The stick.
+ *
+ * Hinged at the TOP — the hand — and hanging down so its tip rests on the strike line,
+ * which is how a stick actually pivots. Lifting swings the tip up and away; striking
+ * brings it back down onto the line. Anchoring it at the bottom, or sliding it up and
+ * down, would show her a motion no drummer makes.
+ */
+.stick {
+  position: absolute; left: 50%; top: 0;
+  width: 10px; border-radius: 5px 5px 4px 4px;
+  background: linear-gradient(180deg, #f0d6b0, #d3a874 55%, #a87840);
+  box-shadow: 0 3px 8px #0007;
+  transform-origin: 50% 0;
+  will-change: transform;
+  z-index: 2;
 }
-.pads .p.hit {
-  background: var(--hot); border-color: var(--ink);
-  transform: scaleY(1.5); box-shadow: 0 0 22px #ffc857aa;
+/* A small hand at the pivot, so it reads as held rather than floating. */
+.stick::before {
+  content: ''; position: absolute; left: 50%; top: -5px;
+  width: 20px; height: 20px; margin-left: -10px;
+  border-radius: 50%; background: #6b4c2f; box-shadow: 0 2px 6px #0007;
 }
 
 /* verdict --------------------------------------------------------- */
@@ -316,17 +355,6 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 .dot.slow { background: var(--slow); }
 @keyframes fade { from { opacity: .95; transform: scale(1.3); } to { opacity: 0; transform: scale(.7); } }
 
-/* hands ----------------------------------------------------------- */
-
-.hands { display: flex; gap: 1.2rem; flex: 0 0 auto; }
-.hand {
-  width: 2.4rem; height: 2.4rem; border-radius: 50%;
-  display: grid; place-items: center;
-  font-weight: 900; font-size: 1rem;
-  background: #ffffff14; border: 3px solid var(--line); color: var(--muted);
-  transition: transform .1s ease, background-color .1s ease, color .1s ease;
-}
-.hand.next { background: var(--hot); color: #3a2708; border-color: var(--ink); transform: scale(1.14); }
 
 .streak { font-weight: 800; font-size: .95rem; color: var(--muted); }
 .streak b { color: var(--hot); font-size: 1.35rem; font-family: var(--font-display); }

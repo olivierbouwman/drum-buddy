@@ -85,8 +85,22 @@
   <p class="ex-tip" id="ex-tip"></p>
 
   <div class="ball-area" id="ball-area">
-    <div class="ball" id="ball" aria-hidden="true"></div>
-    <div class="pads" id="pads" aria-hidden="true"></div>
+    <div class="lanes" id="lanes" aria-hidden="true">
+      <div class="lane" data-hand="L">
+        <div class="notes" id="notes-L"></div>
+        <div class="pad" id="pad-L"></div>
+        <div class="strike" id="strike-L"></div>
+        <div class="stick" id="stick-L"></div>
+        <div class="handtag">L</div>
+      </div>
+      <div class="lane" data-hand="R">
+        <div class="notes" id="notes-R"></div>
+        <div class="pad" id="pad-R"></div>
+        <div class="strike" id="strike-R"></div>
+        <div class="stick" id="stick-R"></div>
+        <div class="handtag">R</div>
+      </div>
+    </div>
     <div class="countin" id="countin" aria-hidden="true"></div>
   </div>
 
@@ -94,11 +108,6 @@
 
   <div class="verdict-lane">
     <div class="verdict" id="verdict" role="status" aria-live="off"><span></span></div>
-  </div>
-
-  <div class="hands" id="hands" aria-hidden="true">
-    <span class="hand" data-hand="L">L</span>
-    <span class="hand" data-hand="R">R</span>
   </div>
 
   <div class="band-row" id="play-band" aria-hidden="true"></div>

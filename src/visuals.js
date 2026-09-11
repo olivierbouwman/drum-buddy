@@ -10,86 +10,65 @@ import { WINDOWS } from './config.js'
 
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
 
-/** How many beats fit across the screen, and where the ball sits along it. */
-const VISIBLE_BEATS = 5
-const BALL_X = 0.34
+/** How far ahead she can see, and where on the lane the stick meets the pad. */
+const LOOKAHEAD_BEATS = 2.4
+const STRIKE_AT = 0.82          // fraction of the lane height
+const MAX_SWING_DEG = 62        // how far the stick swings back at the top of the stroke
+const IDLE_LIFT = 0.12          // resting height, so a waiting stick doesn't look dead
+const APEX = 0.62               // fraction of the stroke spent lifting; the rest is the drop
 
 export class Visuals {
   constructor (countIn = 4) {
     this.countIn = countIn
-    this.ball = document.getElementById('ball')
-    this.padsEl = document.getElementById('pads')
     this.area = document.getElementById('ball-area')
     this.verdict = document.getElementById('verdict')
     this.lane = document.querySelector('.verdict-lane')
-    this.handsEl = document.getElementById('hands')
-    this.pads = []
-    this._raf = null
-    this._lastPad = -1
-  }
-
-  /**
-   * Build the beat strip.
-   *
-   * The strip scrolls leftward under a ball that bounces in one place, rather than the
-   * ball flying back across the screen at the end of each bar. The jump back read as a
-   * glitch and broke the sense of time moving steadily forward.
-   *
-   * One cell per beat of the whole exercise, count-in included. At 8 bars that is ~36
-   * cells, cheap enough not to bother recycling them.
-   *
-   * @param {number} beatsPerBar
-   * @param {number} totalBeats  including the count-in
-   * @param {string[]} countWords one or two words per beat, from the exercise
-   */
-  setup (beatsPerBar, totalBeats, countWords = []) {
-    this.beatsPerBar = beatsPerBar
-    this.totalBeats = totalBeats
-    this.padsEl.innerHTML = ''
-    this.pads = []
-
-    const perBeat = countWords.length && countWords.length % beatsPerBar === 0
-      ? countWords.length / beatsPerBar
-      : 0
-
-    for (let i = 0; i < totalBeats + VISIBLE_BEATS; i++) {
-      const cell = document.createElement('div')
-      cell.className = 'cell'
-      const inBar = ((i - this.countIn) % beatsPerBar + beatsPerBar) % beatsPerBar
-      if (inBar === 0) cell.classList.add('downbeat')
-
-      const bar = document.createElement('div')
-      bar.className = 'p'
-      cell.append(bar)
-
-      if (perBeat) {
-        const words = document.createElement('div')
-        words.className = 'w'
-        for (let k = 0; k < perBeat; k++) {
-          const sp = document.createElement('span')
-          const word = countWords[(inBar * perBeat + k) % countWords.length]
-          sp.textContent = word
-          if (word.startsWith('(') || word === '&') sp.className = 'soft'
-          words.append(sp)
-        }
-        cell.append(words)
-      }
-
-      this.padsEl.append(cell)
-      this.pads.push(bar)
+    this.lanes = {
+      L: {
+        notes: document.getElementById('notes-L'),
+        strike: document.getElementById('strike-L'),
+        pad: document.getElementById('pad-L'),
+        stick: document.getElementById('stick-L'),
+        el: [],
+      },
+      R: {
+        notes: document.getElementById('notes-R'),
+        strike: document.getElementById('strike-R'),
+        pad: document.getElementById('pad-R'),
+        stick: document.getElementById('stick-R'),
+        el: [],
+      },
     }
-    this._lastPad = -1
+    this._raf = null
   }
 
   /**
-   * @param {(ts:number)=>number} phaseFn  fractional beats since the count-in started
-   * @param {()=>('R'|'L'|null)} handFn    which hand plays the next note, if any
+   * @param {object} exercise
+   * @param {Array<{time:number,hand:string}>} notes absolute AudioContext times
+   * @param {(t:number)=>number} toScreenTime maps context time to the animation clock
    */
-  start (phaseFn, handFn) {
+  setup (exercise, notes, toScreenTime) {
+    this.exercise = exercise
+    this.toScreenTime = toScreenTime
+    for (const hand of ['L', 'R']) {
+      const lane = this.lanes[hand]
+      lane.notes.innerHTML = ''
+      lane.el = []
+    }
+    this.notes = notes.map((n) => {
+      const el = document.createElement('div')
+      el.className = 'note'
+      this.lanes[n.hand].notes.append(el)
+      const rec = { ...n, el, done: false }
+      this.lanes[n.hand].el.push(rec)
+      return rec
+    })
+  }
+
+  start (nowFn) {
     this.stop()
-    const tick = (ts) => {
-      this.frame(phaseFn(ts))
-      if (handFn) this.showHand(handFn())
+    const tick = () => {
+      this.frame(nowFn())
       this._raf = requestAnimationFrame(tick)
     }
     this._raf = requestAnimationFrame(tick)
@@ -100,69 +79,99 @@ export class Visuals {
     this._raf = null
   }
 
-  /** @param {number} phase fractional beats since the count-in started */
-  frame (phase) {
-    if (!this.pads.length) return
-
+  /** @param {number} now current time on the same clock the note times use */
+  frame (now) {
+    if (!this.notes) return
     const rect = this.area.getBoundingClientRect()
-    const spacing = rect.width / VISIBLE_BEATS
-    const ballX = rect.width * BALL_X
-    const bw = this.ball.offsetWidth
+    const height = rect.height
+    // Where the stick meets the pad, and how much of the future is visible.
+    const strikeY = height * STRIKE_AT
+    const lookahead = LOOKAHEAD_BEATS * this.beatS
+    const pxPerSecond = strikeY / lookahead
 
-    // Slide the strip so that the cell for beat k sits under the ball exactly at
-    // phase == k. Under reduced motion the strip steps a whole beat at a time instead
-    // of gliding; the beat cue stays, it just stops moving continuously.
-    const shown = reduced.matches ? Math.floor(Math.max(0, phase)) : phase
-    this.padsEl.style.transform = `translateX(${ballX - shown * spacing - spacing / 2}px)`
-    if (this._spacing !== spacing) {
-      this._spacing = spacing
-      this.padsEl.style.setProperty('--cell', spacing + 'px')
+    // Hinge the stick above its own strike point, long enough that the tip rests
+    // exactly on the line when the stroke lands.
+    const stickLen = Math.max(40, Math.min(strikeY * 0.55, height * 0.34))
+    this._stickLen = stickLen
+    for (const hand of ['L', 'R']) {
+      const lane = this.lanes[hand]
+      lane.strike.style.top = strikeY + 'px'
+      if (lane.pad) lane.pad.style.top = strikeY + 'px'
+      lane.stick.style.height = stickLen + 'px'
+      lane.stick.style.top = (strikeY - stickLen) + 'px'
     }
 
-    const beat = Math.floor(phase)
-    const f = phase - beat
-    const arc = Math.max(40, rect.height * 0.62)
-    const y = reduced.matches ? 0 : 4 * arc * f * (1 - f)
-    this.ball.style.transform = `translate(${ballX - bw / 2}px, ${-y - 14}px)`
-
-    if (beat !== this._lastPad && phase >= 0) {
-      this._lastPad = beat
-      this.flashPad(beat)
+    for (const n of this.notes) {
+      const dt = n.time - now
+      if (dt > lookahead + 0.3 || dt < -0.6) {
+        if (n.el.style.display !== 'none') n.el.style.display = 'none'
+        continue
+      }
+      n.el.style.display = ''
+      const y = strikeY - dt * pxPerSecond
+      n.el.style.transform = `translateY(${y - 7}px)`
+      if (dt < -0.02 && !n.done) { n.done = true; n.el.classList.add('done') }
     }
-  }
 
-  flashPad (i) {
-    const p = this.pads[i]
-    if (!p) return
-    p.classList.add('hit')
-    setTimeout(() => p.classList.remove('hit'), 110)
+    for (const hand of ['L', 'R']) {
+      this._moveStick(hand, now)
+    }
   }
 
   /**
-   * Which hand plays next.
+   * The stroke.
    *
-   * The letter lives INSIDE the ball because that is where she is already looking —
-   * the ball is the anticipation cue, and making her glance elsewhere to find the hand
-   * defeats the point. A blank ball means the next landing is a rest: don't hit. The
-   * row below repeats it as a larger, steadier target.
+   * Deliberately NOT a pendulum. A real stroke lifts relatively slowly and then
+   * accelerates down into the pad, so a symmetric sine would model the wrong motion —
+   * and the accelerating drop doubles as a much sharper "now" cue than a smooth one.
    */
-  showHand (hand) {
-    if (hand !== this._hand) {
-      this._hand = hand
-      this.ball.textContent = hand || ''
-      this.ball.classList.toggle('resting', !hand)
+  _moveStick (hand, now) {
+    const lane = this.lanes[hand]
+    const S = Math.min(0.6 * this.beatS, 0.5)
+
+    // The next note this hand has to play, and the one it just played.
+    let next = null
+    let last = null
+    for (const n of lane.el) {
+      const dt = n.time - now
+      if (dt >= -0.001 && (next === null || n.time < next.time)) next = n
+      if (dt < 0 && (last === null || n.time > last.time)) last = n
     }
-    for (const el of this.handsEl.children) {
-      el.classList.toggle('next', el.dataset.hand === hand)
+
+    let lift = IDLE_LIFT
+    if (next && next.time - now <= S) {
+      const p = 1 - (next.time - now) / S            // 0 at the start of the lift, 1 at contact
+      lift = p < APEX
+        ? Math.sin((p / APEX) * (Math.PI / 2))       // slow, easing lift
+        : Math.cos(((p - APEX) / (1 - APEX)) * (Math.PI / 2))  // accelerating drop
+      lift = IDLE_LIFT + lift * (1 - IDLE_LIFT)
+    } else if (last && now - last.time < 0.12) {
+      // A small rebound off the pad, decaying away.
+      const a = (now - last.time) / 0.12
+      lift = IDLE_LIFT + Math.sin(a * Math.PI) * 0.22 * (1 - a)
     }
+
+    /*
+     * Lift is a ROTATION about the hand, not a slide. The tip swings up and away from
+     * the pad and comes back down onto it, which is the motion a wrist actually makes.
+     * Left and right swing outwards, mirroring each other.
+     */
+    // Verified against the rendered result rather than assumed: this sign sends each
+    // stick outward, away from its neighbour, so the two never appear to collide.
+    const away = hand === 'L' ? 1 : -1
+    const angle = lift * MAX_SWING_DEG * away
+    lane.stick.style.transform = `translateX(-50%) rotate(${angle.toFixed(1)}deg)`
   }
 
-  clearHands () {
-    this._hand = undefined
-    this.ball.textContent = ''
-    this.ball.classList.remove('resting')
-    for (const el of this.handsEl.children) el.classList.remove('next')
+  /** Flash the strike line for a hand. */
+  flashPad (hand) {
+    const lane = this.lanes[hand] || this.lanes.R
+    lane.strike.classList.add('hit')
+    setTimeout(() => lane.strike.classList.remove('hit'), 110)
   }
+
+  showHand () { /* the lanes and the sticks carry this now */ }
+  clearHands () { /* nothing to clear */ }
 
   /**
    * Show a verdict. Three redundant channels — emoji, words, and where the dot lands
