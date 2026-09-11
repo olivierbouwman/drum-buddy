@@ -32,6 +32,12 @@ export class MotionInput extends InputSource {
     this._handler = (e) => this._onMotion(e)
   }
 
+  /** Listen much harder, for the screen-tap calibration only. */
+  setSensitive (on) {
+    this.sensitive = !!on
+    this.lastHit = -1e9
+  }
+
   /** Live magnitude relative to the trigger threshold, for the on-screen meter. */
   onLevel (fn) { this._onLevel = fn }
 
@@ -90,7 +96,19 @@ export class MotionInput extends InputSource {
     const p90 = sorted[Math.floor(sorted.length * 0.9)]
     this.rest = med
     // Tuned against a real session: 26 of her 32 notes found, 30 ms spread.
-    const threshold = med + Math.max(MOTION.spikeOverSpread * (p90 - med), MOTION.minThreshold)
+    /*
+     * Far more sensitive while calibrating.
+     *
+     * A finger tap on glass barely moves the tablet compared with a stick on the pad,
+     * so at the playing threshold it is only caught well into its rise — which measured
+     * the sensor's delay about 100 ms too high and scattered by 49 ms across five taps.
+     * Dropping the bar during calibration catches the tap near its true start. False
+     * triggers do not matter here: every spike is paired against a screen touch that
+     * either happened or did not.
+     */
+    const k = this.sensitive ? MOTION.calibrateOverSpread : MOTION.spikeOverSpread
+    const floor = this.sensitive ? MOTION.calibrateMinThreshold : MOTION.minThreshold
+    const threshold = med + Math.max(k * (p90 - med), floor)
 
     this._onLevel(mag / (threshold || 1), mag)
 

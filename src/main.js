@@ -441,8 +441,9 @@ async function measureMotionDelay () {
   // Five rather than three: this median is the whole calibration, and three samples of
   // a jittery sensor is not enough to trust one.
   for (let i = 0; i < 5; i++) dots.append(document.createElement('span'))
-  $('warmup-msg').textContent = 'Tap the screen 5 times 👆'
+  $('warmup-msg').textContent = 'Tap the screen firmly 5 times 👆'
 
+  motion.setSensitive(true)
   const taps = []
   const spikes = []
   const onTap = (e) => {
@@ -464,6 +465,7 @@ async function measureMotionDelay () {
   await sleep(400)                       // let the last jolt arrive
   document.removeEventListener('pointerdown', onTap)
   offMotion()
+  motion.setSensitive(false)
 
   /*
    * Pair each tap with the first jolt that follows it, inside a window tight enough
@@ -478,9 +480,14 @@ async function measureMotionDelay () {
   if (deltas.length >= 3) {
     const sorted = [...deltas].sort((a, b) => a - b)
     const med = sorted[sorted.length >> 1]
-    motionDelayS = Math.max(0, Math.min(0.4, med))
-    const mad = sorted.map((v) => Math.abs(v - med)).sort((a, b) => a - b)[sorted.length >> 1] * 1000
-    tapSpreadMs = Math.round(mad * 1.4826)
+    const mad = sorted.map((v) => Math.abs(v - med)).sort((a, b) => a - b)[sorted.length >> 1]
+    // Drop anything wildly out of line before averaging: a tap paired with the wrong
+    // jolt is a plausible-looking sample that should not be allowed to shift the result.
+    const kept = sorted.filter((v) => Math.abs(v - med) <= Math.max(mad * 3, 0.03))
+    const useMed = kept.length ? kept[kept.length >> 1] : med
+    motionDelayS = Math.max(0, Math.min(0.4, useMed))
+    tapSpreadMs = Math.round(mad * 1.4826 * 1000)
+    tapKept = kept.length
     if (debug) console.log('[drum-buddy] pad delay', Math.round(motionDelayS * 1000), 'ms +/-', tapSpreadMs, 'from', tapDeltasMs)
   }
   applyMotionTiming()
@@ -490,6 +497,7 @@ async function measureMotionDelay () {
 let motionDelayS = 0
 let tapDeltasMs = []
 let tapSpreadMs = null
+let tapKept = 0
 
 /**
  * Tell the timing model what to subtract from a pad hit: how late she HEARS the beat,
@@ -1150,7 +1158,10 @@ function snapshot () {
       motionDelayMs: Math.round(motionDelayS * 1000),
       tapDeltasMs,
       tapSpreadMs,
+      tapKept,
       outputLatencyMs: Math.round((engine.outputLatency || 0) * 1000),
+      timestampTrusted: engine._timestampUsable,
+      visualLagMs: engine.visualLagMs,
       trackLatencyMs: mic && mic.stream
         ? Math.round(((mic.stream.getAudioTracks()[0].getSettings() || {}).latency || 0) * 1000)
         : null,

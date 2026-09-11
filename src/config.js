@@ -129,6 +129,9 @@ export const MOTION = {
    */
   spikeOverSpread: 2.0,
   minThreshold: 0.3,    // absolute floor, so a perfectly still device isn't twitchy
+  /** Used only while measuring the sensor's delay against a screen tap. */
+  calibrateOverSpread: 0.6,
+  calibrateMinThreshold: 0.06,
   refractoryMs: 120,
   /**
    * The microphone still times a hit when it can: it is sample-accurate and this is

@@ -51,15 +51,27 @@ export class AudioEngine {
    * identical to currentTime. Both are useless, so check before trusting it.
    */
   _probeTimestamp () {
+    this.outputLatency = this.ctx.outputLatency || (this.ctx.baseLatency || 0.01) * 2 || 0.02
     try {
       const ts = this.ctx.getOutputTimestamp()
       const lag = this.ctx.currentTime - ts.contextTime
+      /*
+       * The whole point of getOutputTimestamp is that contextTime trails currentTime by
+       * the output latency — that gap is what makes a note appear on screen when it is
+       * HEARD rather than when it was rendered.
+       *
+       * Accepting any lag >= 0 accepted a platform reporting no gap at all, and then
+       * the visuals lost the entire output latency and ran 171 ms ahead of the sound on
+       * the real tablet. Playing to the screen and playing to the beat disagreed, which
+       * is worse than either being wrong on its own. So the reported gap now has to be
+       * consistent with the latency the same context admits to elsewhere.
+       */
       this._timestampUsable =
-        ts.performanceTime > 0 && ts.contextTime > 0 && lag >= 0 && lag < 0.5
+        ts.performanceTime > 0 && ts.contextTime > 0 &&
+        lag >= this.outputLatency * 0.5 && lag < 0.8
     } catch {
       this._timestampUsable = false
     }
-    this.outputLatency = this.ctx.outputLatency || (this.ctx.baseLatency || 0.01) * 2 || 0.02
   }
 
   /**
@@ -104,6 +116,12 @@ export class AudioEngine {
   audibleNow () {
     if (this.clockOffset === null) return this.now
     return (performance.now() - this.clockOffset) / 1000
+  }
+
+  /** How far ahead of the sound the visuals would be drawn, in ms. For diagnostics. */
+  get visualLagMs () {
+    if (this.clockOffset === null) return null
+    return Math.round(this.clockOffset - (performance.now() - this.ctx.currentTime * 1000))
   }
 
   async close () {
