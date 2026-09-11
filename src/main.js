@@ -757,6 +757,7 @@ function useDefaultPadDelay () {
   // same reason the tuned nudge outranks its derivations: it was checked against the
   // thing itself rather than inferred from something adjacent to it.
   const trimmed = storedPadDelayMs()
+  timing.pinPadDelay(trimmed !== null)
   if (trimmed !== null) {
     motionDelayS = Math.max(0, Math.min(trimmed, MOTION.padDelayMaxMs)) / 1000
     applyMotionTiming()

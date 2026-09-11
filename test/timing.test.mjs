@@ -255,5 +255,36 @@ console.log('\nthe nudge is the latency term that was being dropped')
     slack > LATE_TIMER_MS, `${slack.toFixed(0)} ms of slack`)
 }
 
+console.log('\na hand-set pad delay is not overridden by anything live')
+{
+  const OUT = 0.171
+  const TUNED_PAD = 0.055
+
+  const m = new TimingModel()
+  m.setMotionTiming({ outputLatencyS: OUT, motionDelayS: TUNED_PAD })
+  m.pinPadDelay(true)
+  const before = m.latencyFor('motion')
+
+  // The microphone comes to life mid-session and cross-calibration kicks in. Without the
+  // pin this branch replaces motionDelayS outright and what counts as on-time changes
+  // partway through a run — a calibration that moves on its own, which a child feels as
+  // drift with nothing to correct against.
+  m.setEstimated(0.496)
+  m.setCrossOffset(-0.2)
+  check('the pinned value survives cross-calibration',
+    near(m.latencyFor('motion'), before, 0.0005),
+    `${(m.latencyFor('motion') * 1000).toFixed(1)} vs ${(before * 1000).toFixed(1)} ms`)
+  check('and it is still the tuned number', near(m.latencyFor('motion'), OUT + TUNED_PAD, 0.0005))
+
+  // Unpinned, the derived route is still allowed to win — it is exact when it applies,
+  // and a device nobody has tuned should take the better measurement.
+  const auto = new TimingModel()
+  auto.setMotionTiming({ outputLatencyS: OUT, motionDelayS: 0.015 })
+  auto.setEstimated(0.496)
+  auto.setCrossOffset(-0.2)
+  check('an untuned device still gets the cross-calibrated value',
+    near(auto.latencyFor('motion'), 0.496 - 0.2, 0.0005))
+}
+
 console.log(`\n${passed} passed, ${failed} failed\n`)
 process.exit(failed ? 1 : 0)

@@ -72,6 +72,7 @@ export class TimingModel {
     this.outputLatencyS = null
     this.motionDelayS = null
     this.crossOffsetS = null
+    this.padDelayPinned = false
   }
 
   /** The scheduler tells us when it asked for a click. */
@@ -201,7 +202,18 @@ export class TimingModel {
      * shape mismatch between a finger on glass and a stick on rubber, which biases the
      * peak the tap method depends on.
      */
-    if (this.crossOffsetS !== null && this.crossOffsetS !== undefined && this.latencyS) {
+    /*
+     * Unless the pad delay was set by hand, in which case nothing here outranks it.
+     *
+     * This branch is derived from live microphone data and it replaces motionDelayS
+     * outright — so on a device where someone has already sat down and tuned the pad
+     * delay against their own playing, a microphone that started working mid-session
+     * would silently throw that away and change what counts as on-time partway through.
+     * A calibration that moves on its own is worse than one that is slightly off, because
+     * the child feels it drift and has nothing to correct against.
+     */
+    if (!this.padDelayPinned &&
+        this.crossOffsetS !== null && this.crossOffsetS !== undefined && this.latencyS) {
       return this.latencyS + this.crossOffsetS
     }
 
@@ -219,6 +231,12 @@ export class TimingModel {
    * @param {number} outputLatencyS how late she HEARS the beat
    * @param {number} motionDelayS   how late the accelerometer reports a strike
    */
+  /**
+   * Freeze the pad delay: a hand-set value, which no live derivation may override.
+   * @param {boolean} pinned
+   */
+  pinPadDelay (pinned) { this.padDelayPinned = !!pinned }
+
   setMotionTiming ({ outputLatencyS, motionDelayS }) {
     if (typeof outputLatencyS === 'number') this.outputLatencyS = outputLatencyS
     if (typeof motionDelayS === 'number') this.motionDelayS = motionDelayS
