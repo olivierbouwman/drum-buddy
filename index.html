@@ -33,10 +33,10 @@
 
   <button id="btn-play" class="huge">▶ Play</button>
 
-  <div class="levels" role="group" aria-label="How fussy should I be about timing?">
-    <span class="levels-label" id="levels-label">How fussy?</span>
-    <div id="level-buttons"></div>
-  </div>
+  <!-- The difficulty picker lived here. It is chosen automatically now: the app watches
+       her steadiness and moves the level itself, which is a better judgement than a
+       parent guessing from a menu. A manual override survives behind ?debug. -->
+  <div id="level-buttons" hidden></div>
 
   <button id="btn-fullscreen" class="ghost" hidden>⛶ Full screen</button>
 

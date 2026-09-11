@@ -1408,6 +1408,10 @@ function maybeChangeLevel () {
 
 function renderLevels () {
   const host = $('level-buttons')
+  // Hidden in normal use — see the note in index.html. Still rendered under ?debug so a
+  // level can be pinned while testing.
+  host.hidden = !debug
+  if (!debug) return
   host.innerHTML = ''
 
   const auto = document.createElement('button')
