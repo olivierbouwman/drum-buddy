@@ -49,10 +49,32 @@ export class SelfTest {
       return { pass: false, median: null, spread: 0, heard: 0, lines }
     }
 
-    say(`Playing ${BEATS} fake hits, each ${OFFSET_MS} ms after the beat.`)
     say('Keep quiet and don’t drum. Volume up.')
 
     const beatS = 1.0
+
+    // Settle the latency measurement BEFORE measuring anything. K is unknown until the
+    // microphone has heard a few clicks come back, and judging the first beats against
+    // an unmeasured delay would put junk into the very number this test exists to check.
+    say('Listening for the beat coming back…')
+    let t = this.engine.now + 0.6
+    for (let i = 0; i < 6; i++) {
+      this.clicks.playAt('beat', t)
+      this.timing.expectClick(t)
+      t += 0.45
+    }
+    await new Promise((r) => setTimeout(r, (t - this.engine.now + 0.4) * 1000))
+
+    if (!this.timing.usable) {
+      say(this.timing.status === 'unstable'
+        ? `The delay won’t hold still (${this.timing.spreadMs.toFixed(0)} ms of wander). Nothing measured.`
+        : 'Could not hear the beep come back. Turn the volume up and check the mic.')
+      return { pass: false, median: null, spread: 0, heard: 0, lines }
+    }
+    say(`Round-trip delay: ${Math.round(this.timing.latencyMs)} ms (steady to ${this.timing.spreadMs.toFixed(1)} ms).`)
+
+    say(`Now playing ${BEATS} fake hits, each ${OFFSET_MS} ms after the beat.`)
+
     const start = this.engine.now + 1.0
     const notes = []
 
