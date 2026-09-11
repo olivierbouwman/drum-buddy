@@ -11,8 +11,8 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { TimingModel } from '../src/timing-model.js'
-import { METRONOME } from '../src/config.js'
+import { TimingModel, speakerNudgeS } from '../src/timing-model.js'
+import { METRONOME, SCHEDULER } from '../src/config.js'
 import { ClickProbe, probeOffsetSeconds } from '../src/dsp-core.js'
 import { readWav } from '../tools/wav.mjs'
 
@@ -204,6 +204,30 @@ console.log('\nthe metronome nudge moves the sound, not the goalposts')
   // A sanity bound: a nudge bigger than a beat would reorder the metronome.
   check('the nudge is small compared with any tempo we use',
     METRONOME.nudgeMs < 60000 / 200, `${METRONOME.nudgeMs} ms`)
+}
+
+console.log('\nthe nudge is derived, not guessed')
+{
+  const FALLBACK = METRONOME.nudgeMs / 1000
+  const MAX = METRONOME.nudgeMaxMs / 1000
+  const n = (rt, rep) => speakerNudgeS(rt, rep, FALLBACK, MAX) * 1000
+
+  // Her tablet: 496 ms measured round trip, 171 ms claimed by Chrome.
+  check('her tablet gets 77 ms', near(n(0.496, 0.171), 77, 0.5), `${n(0.496, 0.171).toFixed(1)} ms`)
+  check('which is more than double the flat guess it replaces', n(0.496, 0.171) > METRONOME.nudgeMs * 2)
+
+  // A browser that reports honestly needs no help at all.
+  check('an accurate browser gets no nudge', n(0.496, 0.248) === 0)
+  check('a generous browser is not corrected downwards', n(0.496, 0.400) === 0)
+
+  check('never measured falls back', near(n(null, 0.171), METRONOME.nudgeMs, 0.001))
+  check('a nonsense round trip falls back', near(n(0, 0.171), METRONOME.nudgeMs, 0.001))
+  check('an absurd round trip is capped', n(4.0, 0.171) === METRONOME.nudgeMaxMs)
+
+  // The scheduler has to reach a beat before it needs to emit it.
+  check('the lookahead can always cover the largest nudge',
+    SCHEDULER.lookaheadS * 1000 > METRONOME.nudgeMaxMs,
+    `lookahead ${SCHEDULER.lookaheadS * 1000} ms vs max nudge ${METRONOME.nudgeMaxMs} ms`)
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`)

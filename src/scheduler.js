@@ -87,7 +87,8 @@ export class Scheduler {
        * earlier so the sound LANDS on the beat — see METRONOME.nudgeMs. Only the second
        * of those two moves; everything scored or drawn keeps using `t`.
        */
-      const emitAt = Math.max(this.engine.now, t - METRONOME.nudgeMs / 1000)
+      const nudgeS = this.nudgeS ?? METRONOME.nudgeMs / 1000
+      const emitAt = Math.max(this.engine.now, t - nudgeS)
       this.clicks.playAt(this.thumpMode ? 'thump' : (accent ? 'accent' : 'beat'), emitAt)
       this._onClick({
         index: this.nextBeat,

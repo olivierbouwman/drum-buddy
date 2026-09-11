@@ -9,7 +9,7 @@
  * interface without touching anything in here.
  */
 
-import { TEMPO, DRUM_NAV, SCHEDULER, FUSION, CALIBRATION, DETECTOR, WEEK, MOTION,
+import { TEMPO, DRUM_NAV, SCHEDULER, FUSION, CALIBRATION, DETECTOR, WEEK, MOTION, METRONOME,
   LEVELS, LEVEL_STORAGE_KEY, applyLevel } from './config.js'
 import { EXERCISES, byId } from './exercises.js'
 import { AudioEngine } from './audio-engine.js'
@@ -19,7 +19,7 @@ import { Visuals, confetti } from './visuals.js'
 import { TapInput, FusedInput } from './input-sources.js'
 import { MicInput } from './onset-detector.js'
 import { MotionInput } from './motion-detector.js'
-import { TimingModel } from './timing-model.js'
+import { TimingModel, speakerNudgeS } from './timing-model.js'
 import { probeOffsetSeconds, refractoryForSpacing } from './dsp-core.js'
 import { AutoTune } from './auto-tune.js'
 import { SelfTest } from './selftest.js'
@@ -1126,6 +1126,13 @@ function startExercise (index, step = null) {
   // Speaker test: thump instead of tick, and say so on screen so a run cannot be
   // mistaken for a practice.
   scheduler.thumpMode = speakerTest
+  /*
+   * Recomputed per exercise, because the stored round trip can change between sessions
+   * and the browser's own figure is read fresh from the context each time.
+   */
+  scheduler.nudgeS = speakerNudgeS(
+    timing.latencyS, engine.outputLatency,
+    METRONOME.nudgeMs / 1000, METRONOME.nudgeMaxMs / 1000)
   if (speakerTest) $('ex-name').textContent = 'SPEAKER TEST — do not play'
 
   visuals.beatS = beatS
@@ -1898,6 +1905,7 @@ function snapshot () {
       // How far apart ctx.currentTime's steps are. Anything much above a couple of
       // milliseconds means motion timing has to go through engine.nowFine.
       clockStepMs: engine.clockStepMs ? Math.round(engine.clockStepMs) : null,
+      nudgeMs: scheduler && scheduler.nudgeS != null ? Math.round(scheduler.nudgeS * 1000) : null,
       padDelayRefused,
       todayWatch,
       warmupHits,

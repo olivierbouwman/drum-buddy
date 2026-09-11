@@ -106,15 +106,22 @@ export const METRONOME = {
    * flatter or punish her playing. It only stops the speaker running behind everything
    * else that is trying to agree with it.
    *
-   * Raise it if the beep still feels late, lower it if it starts to feel early. Zero
-   * disables it and restores exactly the old behaviour.
+   * Only a FALLBACK. When the device has ever measured its own speaker-to-microphone
+   * round trip, the shortfall is derived from that instead — see speakerNudgeS(). A
+   * hand-set 30 ms was a guess, and it was less than half of what her tablet needed.
    */
   nudgeMs: 30,
+  /*
+   * A ceiling, because the derived figure comes from a stored measurement that nothing
+   * re-checks. Half a beat at any tempo she plays is far more than this, so a nudge that
+   * hit the ceiling would be a broken reading rather than a slow speaker.
+   */
+  nudgeMaxMs: 150,
 }
 
 export const SCHEDULER = {
   tickMs: 25,           // how often the lookahead loop runs
-  lookaheadS: 0.15,     // how far ahead clicks are scheduled
+  lookaheadS: 0.25,     // how far ahead clicks are scheduled; must exceed METRONOME.nudgeMaxMs
   countInBeats: 4,
 }
 

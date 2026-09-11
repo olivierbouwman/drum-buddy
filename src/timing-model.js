@@ -245,3 +245,32 @@ export class TimingModel {
     this.status = 'unmeasured'
   }
 }
+
+/**
+ * How far ahead of its beat the click has to be handed to the speaker.
+ *
+ * The browser's reported output latency is a nominal figure on Android, and on her
+ * tablet it is short: playing to the click scored late even after a flat 30 ms of
+ * compensation. The device has, though, measured one real acoustic quantity — the round
+ * trip from its own speaker back into its own microphone. Half of that is the outbound
+ * half, and the code that used to rely on it recorded landing within 7 ms of what her
+ * playing actually needed.
+ *
+ * So the nudge is the gap between that and what the browser claims. On her tablet:
+ * 496 / 2 = 248 measured, 171 claimed, so the sound has been arriving 77 ms after the
+ * moment the app drew the note crossing the line.
+ *
+ * Never negative — if the browser's figure is already generous, the honest thing is to
+ * leave the timing alone rather than delay the click to match a bad estimate.
+ *
+ * @param {number|null} roundTripS  measured speaker-to-microphone round trip
+ * @param {number} reportedOutputS  what the browser claims
+ * @param {number} fallbackS        used when nothing has ever been measured
+ * @param {number} maxS             ceiling; a reading above it is not believed
+ */
+export function speakerNudgeS (roundTripS, reportedOutputS, fallbackS, maxS) {
+  if (!roundTripS || roundTripS <= 0) return Math.min(fallbackS, maxS)
+  const shortfall = roundTripS / 2 - (reportedOutputS || 0)
+  if (!Number.isFinite(shortfall)) return Math.min(fallbackS, maxS)
+  return Math.max(0, Math.min(shortfall, maxS))
+}
