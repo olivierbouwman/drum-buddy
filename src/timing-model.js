@@ -260,10 +260,16 @@ export class TimingModel {
  * every beat. On her tablet baseLatency is one 4096-frame buffer — 85 ms — which is why
  * playing to the click scored late while playing to the graphics scored correctly.
  *
- * Two independent numbers agree on the size of it. baseLatency reads about 85 ms, and
- * the measured speaker-to-microphone round trip of 496 ms implies an outbound leg of
- * 248 ms against the 171 ms Chrome reports — a shortfall of 77 ms. Within 8 ms of each
- * other, from completely different evidence.
+ * Two derivations agreed with each other and BOTH were wrong. baseLatency reads about
+ * 85 ms; the 496 ms round trip implies an outbound leg of 248 ms against Chrome's
+ * reported 171 ms, so a 77 ms shortfall. Tuned by ear on the same tablet, the answer is
+ * 125 ms — which makes the true output latency 296 ms and the microphone's input leg
+ * 200 ms. The round trip was never going to land on it, because halving assumes the two
+ * legs are symmetric and on this device they differ by nearly a hundred milliseconds.
+ *
+ * Two independent estimates agreeing is not evidence they are right. They shared an
+ * assumption — that the reported figures describe the whole path — and it was the
+ * assumption that was wrong.
  *
  * baseLatency is used because it is the exact missing term, it needs no microphone, and
  * it is available on the first beat of a fresh install rather than only after something

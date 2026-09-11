@@ -1963,6 +1963,35 @@ function snapshot () {
       }
 }
 
+/*
+ * A way into the tuner from inside the installed app.
+ *
+ * Fullscreen display mode has no address bar, so ?tune is unreachable on the one device
+ * that most needs it — and the offset is a property of the hardware, so it is the tablet
+ * that has to be tuned, not the laptop. A long press on the title reloads into the tuner.
+ *
+ * Deliberately not a button. She is eight, everything on that screen gets pressed, and
+ * an adjustment that changes what "on the beat" means is not hers to find by accident.
+ */
+function armTunerGesture () {
+  const logo = document.querySelector('.logo')
+  if (!logo) return
+  let timer = null
+  const cancel = () => { clearTimeout(timer); timer = null }
+  logo.addEventListener('pointerdown', () => {
+    timer = setTimeout(() => {
+      // Reloads rather than calling runTuner directly: audio needs a fresh user gesture
+      // to start, and the one that began this press is long gone by the time it fires.
+      // Coming back through the front door means Play does the honours, as it always does.
+      location.search = '?tune'
+    }, 900)
+  })
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) {
+    logo.addEventListener(ev, cancel)
+  }
+}
+armTunerGesture()
+
 // ----------------------------------------------------------------- tune
 
 /*

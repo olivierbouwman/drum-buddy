@@ -112,11 +112,15 @@ export const METRONOME = {
    */
   nudgeMs: 30,
   /*
-   * A ceiling, because the derived figure comes from a stored measurement that nothing
-   * re-checks. Half a beat at any tempo she plays is far more than this, so a nudge that
-   * hit the ceiling would be a broken reading rather than a slow speaker.
+   * A ceiling, because a derived figure comes from readings nothing re-checks.
+   *
+   * Raised from 150 once her tablet was tuned by ear to 125 — close enough to the old
+   * ceiling that a slightly slower device would have been silently clipped, and a clip
+   * here is indistinguishable from a correct answer. Must stay below SCHEDULER.lookaheadS,
+   * since the scheduler has to reach a beat before it needs to emit it; there is a test
+   * on that relationship.
    */
-  nudgeMaxMs: 150,
+  nudgeMaxMs: 200,
 }
 
 export const SCHEDULER = {
