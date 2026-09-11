@@ -37,6 +37,7 @@ export class AudioEngine {
 
     this._probeTimestamp()
     this._fineOffset = null
+    this.sampleFineClock()          // seed it: sampleClock now depends on it
     this.sampleClock()
     this._clockTimer = setInterval(() => this.sampleClock(), 250)
     // Sampled every frame, not every 250 ms: catching the moment currentTime ticks over
@@ -124,8 +125,21 @@ export class AudioEngine {
       if (!(ts.performanceTime > 0)) { this._probeTimestamp(); return }
       offset = ts.performanceTime - ts.contextTime * 1000
     } else {
-      // Naive mapping runs early by the whole output latency, so add it back in.
-      offset = performance.now() - this.ctx.currentTime * 1000 + this.outputLatency * 1000
+      /*
+       * Built on the fine offset, not on a fresh read of currentTime.
+       *
+       * currentTime sits still for 85 ms at a time on her tablet, so this difference
+       * sawtooths between 0 and 85, and the one-pole filter below settles on its MEAN —
+       * half a step, about 42 ms, of pure bias. Everything drawn on screen goes through
+       * this offset, so every note crossed the strike line 42 ms after the sound it
+       * belonged to, and a player following the visuals was pushed exactly that late.
+       * Measured on the tablet as a +54 ms lean the moment the pad correction was fixed.
+       *
+       * The fine offset is the minimum of the same quantity rather than its mean, which
+       * is the unbiased one. Sound and picture now come off the same clock.
+       */
+      if (this._fineOffset === null || this._fineOffset === undefined) return
+      offset = this._fineOffset + this.outputLatency * 1000
     }
     if (this.clockOffset === null || Math.abs(offset - this.clockOffset) > 20) {
       this.clockOffset = offset          // first sample, or a real jump: snap

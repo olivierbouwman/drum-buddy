@@ -97,5 +97,38 @@ console.log('\na context that restarts its clock is followed, not remembered')
     Math.abs(engine._fineOffset - (performance.now() - 0)) < 1)
 }
 
+console.log('\nsound and picture come off the same clock')
+{
+  // The mean of the staircase is half a step high; the minimum is not. Everything the
+  // player sees is positioned through clockOffset, so a biased offset moves every note
+  // on screen away from the sound it belongs to.
+  const stepMs = 85.3
+  const { engine, advance } = fakeClocks(stepMs)
+  engine.outputLatency = 0.171
+  engine._timestampUsable = false
+  engine.clockOffset = null
+
+  let meanOffset = null
+  for (let i = 0; i < 240; i++) {
+    engine.sampleFineClock()
+    engine.sampleClock()
+    // What the old code did: smooth a fresh read of the coarse clock.
+    const raw = performance.now() - engine.ctx.currentTime * 1000 + engine.outputLatency * 1000
+    meanOffset = meanOffset === null ? raw : meanOffset + (raw - meanOffset) * 0.15
+    advance(1000 / 60)
+  }
+
+  const truth = performance.now() - (performance.now() / 1000) * 1000 + engine.outputLatency * 1000
+  const oldErr = meanOffset - truth
+  const newErr = engine.clockOffset - truth
+
+  check('averaging the staircase really was biased by about half a step',
+    oldErr > stepMs * 0.25, `${oldErr.toFixed(1)} ms`)
+  check('the offset the visuals use is now within a few ms of truth',
+    Math.abs(newErr) < 8, `${newErr.toFixed(1)} ms`)
+  check('and a note is no longer drawn a staircase behind its sound',
+    Math.abs(newErr) < Math.abs(oldErr) / 3, `old ${oldErr.toFixed(1)} new ${newErr.toFixed(1)}`)
+}
+
 console.log(`\n${passed} passed, ${failed} failed\n`)
 process.exit(failed ? 1 : 0)
