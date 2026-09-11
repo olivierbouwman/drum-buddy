@@ -68,6 +68,10 @@ export class TimingModel {
     this.status = 'unmeasured'              // unmeasured | ok | unstable | implausible
     this.lastUpdate = 0
     this.approximate = false
+    /** Separate correction for pad hits; see latencyFor(). */
+    this.outputLatencyS = null
+    this.motionDelayS = null
+    this.motionLatencyS = null
   }
 
   /** The scheduler tells us when it asked for a click. */
@@ -158,9 +162,40 @@ export class TimingModel {
   get spreadMs () { return this.window.spread }
   get latencyMs () { return this.latencyS === null ? null : this.latencyS * 1000 }
 
-  /** Convert a detected onset time into the moment she actually struck, as she heard it. */
-  correct (onsetContextTime) {
-    return onsetContextTime - (this.latencyS || 0)
+  /**
+   * Convert a detected onset into the moment she struck, relative to what she HEARD.
+   *
+   * Which correction applies depends on which sensor saw the hit, and getting this
+   * wrong is expensive: the microphone's round trip includes the time for sound to
+   * travel INTO the device, and an accelerometer has no such path. Applying the mic's
+   * number to a pad hit over-subtracted by 215 ms on the real tablet, the app decided
+   * she was early, and she compensated by hitting a third of a beat late.
+   *
+   *   microphone: strike -> air -> mic, so subtract output + input latency (the full
+   *               round trip, which is exactly what the click probe measures)
+   *   pad:        strike -> accelerometer, so subtract only what delays her HEARING
+   *               the beat, plus the sensor's own reporting delay
+   */
+  correct (onsetContextTime, source = 'mic') {
+    return onsetContextTime - this.latencyFor(source)
+  }
+
+  latencyFor (source) {
+    if (source !== 'motion') return this.latencyS || 0
+    if (this.motionLatencyS !== null && this.motionLatencyS !== undefined) return this.motionLatencyS
+    // Nothing measured yet: the output half of the round trip is the dominant term.
+    const out = this.outputLatencyS || 0
+    return out + (this.motionDelayS || 0)
+  }
+
+  /**
+   * @param {number} outputLatencyS how late she HEARS the beat
+   * @param {number} motionDelayS   how late the accelerometer reports a strike
+   */
+  setMotionTiming ({ outputLatencyS, motionDelayS }) {
+    if (typeof outputLatencyS === 'number') this.outputLatencyS = outputLatencyS
+    if (typeof motionDelayS === 'number') this.motionDelayS = motionDelayS
+    this.motionLatencyS = (this.outputLatencyS || 0) + (this.motionDelayS || 0)
   }
 
   /**

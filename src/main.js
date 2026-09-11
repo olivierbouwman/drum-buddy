@@ -304,6 +304,9 @@ async function runWarmup () {
   await sleep((t - engine.now) * 1000 + 150)
   inSilentWindow = false
 
+  // --- how late is the pad sensor? ---
+  await measureMotionDelay()
+
   // --- her turn ---
   for (let i = 0; i < 4; i++) dots.append(document.createElement('span'))
   $('warmup-msg').textContent = 'Now hit your pad 4 times!'
@@ -399,6 +402,79 @@ function watchForDeafness (peak) {
   }
 }
 
+/**
+ * Work out how late the accelerometer reports a strike, by tapping the screen.
+ *
+ * A tap and the jolt it puts through the tablet are the SAME physical event seen by two
+ * different sensors, and the touchscreen reports essentially instantly. So the gap
+ * between them is the accelerometer's own delay, measured with no human timing involved
+ * — which is what makes it trustworthy. Nothing here depends on her being on the beat.
+ *
+ * This matters because the two sensors need different corrections. Sound has to travel
+ * INTO the device before the microphone hears it; a wrist does not. Applying the
+ * microphone's round trip to a pad hit over-subtracted by 215 ms on the real tablet.
+ */
+async function measureMotionDelay () {
+  if (!motion || !motion.available) return
+  const dots = $('warmup-dots')
+  dots.innerHTML = ''
+  for (let i = 0; i < 3; i++) dots.append(document.createElement('span'))
+  $('warmup-msg').textContent = 'Tap the screen 3 times 👆'
+
+  const taps = []
+  const spikes = []
+  const onTap = (e) => {
+    if (e.target.closest('button')) return
+    const offset = engine.clockOffset
+    const t = offset === null ? engine.now : (e.timeStamp - offset) / 1000
+    taps.push(t)
+    if (dots.children[taps.length - 1]) dots.children[taps.length - 1].classList.add('got')
+  }
+  const offMotion = onHits((hit) => { if (hit.source === 'motion') spikes.push(hit.time) })
+  document.addEventListener('pointerdown', onTap)
+
+  const started = engine.now
+  while (taps.length < 3 && engine.now - started < 12) await sleep(80)
+  await sleep(400)                       // let the last jolt arrive
+  document.removeEventListener('pointerdown', onTap)
+  offMotion()
+
+  // Pair each tap with the jolt that followed it.
+  const deltas = []
+  for (const t of taps) {
+    const after = spikes.filter((s) => s >= t - 0.05 && s <= t + 0.45)
+    if (after.length) deltas.push(Math.min(...after) - t)
+  }
+  if (deltas.length >= 2) {
+    deltas.sort((a, b) => a - b)
+    const med = deltas[deltas.length >> 1]
+    motionDelayS = Math.max(0, Math.min(0.4, med))
+    if (debug) console.log('[drum-buddy] pad sensor delay:', Math.round(motionDelayS * 1000), 'ms from', deltas.length, 'taps')
+  }
+  applyMotionTiming()
+  dots.innerHTML = ''
+}
+
+let motionDelayS = 0
+
+/**
+ * Tell the timing model what to subtract from a pad hit: how late she HEARS the beat,
+ * plus how late the sensor reports it.
+ */
+function applyMotionTiming () {
+  let out = engine.outputLatency || 0
+  /*
+   * Android often reports this as zero. Falling back to half the microphone's round
+   * trip is crude — it assumes sound takes about as long to get out as to get back in —
+   * but checked against a real session it lands within 7 ms of the value her playing
+   * actually needed, where using the whole round trip was 215 ms out. A guess this
+   * close is only a stopgap: once the microphone can hear her hits, the offset between
+   * the two sensors is measured directly and neither half has to be guessed at.
+   */
+  if (out < 0.05 && timing.latencyS) out = timing.latencyS * 0.5
+  timing.setMotionTiming({ outputLatencyS: out, motionDelayS })
+}
+
 /** Subscribe to hits; returns an unsubscribe. */
 function onHits (fn) {
   const wrapped = (hit) => fn(hit)
@@ -471,7 +547,7 @@ function startExercise (index) {
   offHits = onHits((hit) => {
     // Everything measured stays in AudioContext time; K is subtracted here and nowhere
     // else. See the invariant at the top of timing-model.js.
-    const corrected = { ...hit, time: timing.correct(hit.time) }
+    const corrected = { ...hit, time: timing.correct(hit.time, hit.source) }
     state.hits.push(corrected)
     lastHitAt = hit.time
     if (diagnosticsActive) {
@@ -530,6 +606,7 @@ function startExercise (index) {
   // measurement is best, last session's is good, the browser's estimate is a poor third
   // — but any of them beats leaving her without feedback.
   ensureLatency()
+  applyMotionTiming()
   clearTimeout(calibWatch)
   calibWatch = setTimeout(() => {
     if (!scheduler.running) return
@@ -1031,6 +1108,13 @@ function snapshot () {
       motionRateHz: motion ? motion.rateHz : null,
       motionRest: motion ? motion.rest : null,
       corroboration: input ? input.corroborationRate : null,
+      micReceiving: mic ? mic.receiving : null,
+      motionOffsetMs: input && input.motionOffsetS ? Math.round(input.motionOffsetS * 1000) : 0,
+      motionDelayMs: Math.round(motionDelayS * 1000),
+      outputLatencyMs: Math.round((engine.outputLatency || 0) * 1000),
+      trackLatencyMs: mic && mic.stream
+        ? Math.round(((mic.stream.getAudioTracks()[0].getSettings() || {}).latency || 0) * 1000)
+        : null,
       sampleRate: engine.sampleRate,
     },
     timing: {
@@ -1039,6 +1123,8 @@ function snapshot () {
       spreadMs: timing.spreadMs,
       approximate: !!timing.approximate,
       usable: timing.usable,
+      appliedToMotionMs: Math.round(timing.latencyFor('motion') * 1000),
+      appliedToMicMs: Math.round(timing.latencyFor('mic') * 1000),
     },
     detection: {
       hits: state.hits.length,
