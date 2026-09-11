@@ -75,10 +75,22 @@ class DrumOnsetProcessor extends AudioWorkletProcessor {
 
   process (inputs) {
     const input = inputs[0]
-    // inputs[0] can be an empty array before the source produces anything.
-    if (!input || input.length === 0) return true
-    const ch = input[0]
-    if (!ch) return true
+    const ch = input && input.length ? input[0] : null
+
+    /*
+     * Say so when nothing is arriving.
+     *
+     * Returning quietly here hid a dead microphone completely: the app reported the mic
+     * as available, the meter sat at zero because no level message was ever sent, and a
+     * whole exercise produced 51 ms of silence and no detections — while looking, from
+     * the outside, like a detector that simply could not hear her.
+     */
+    if (!ch) {
+      this.silentQuanta = (this.silentQuanta || 0) + 1
+      if (this.silentQuanta % 200 === 0) this.port.postMessage({ type: 'noInput' })
+      return true
+    }
+    this.silentQuanta = 0
 
     if (this.listening) {
       const hits = this.det.process(ch, currentFrame)

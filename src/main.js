@@ -106,6 +106,8 @@ $('btn-play').addEventListener('click', async () => {
       if (st !== 'running') toast('Tap anywhere to keep going')
     })
 
+    setInterval(watchForSilentMic, 1000)
+
     keepAwake()
     show('warmup')
     await setUpSensors()
@@ -357,6 +359,32 @@ function setMeter (which, fraction) {
  */
 let loudSince = 0
 let deafnessHandled = false
+
+/**
+ * A microphone that was granted but delivers nothing.
+ *
+ * Distinct from deafness: there is no audio at all, so no threshold change can help.
+ * Measured on the tablet — a whole exercise produced 51 ms of silence, zero detections,
+ * and an app still cheerfully reporting the microphone as available.
+ */
+let micSilentSince = 0
+let reacquiring = false
+
+async function watchForSilentMic () {
+  if (!mic || !mic.available || reacquiring) return
+  const now = Date.now()
+  if (mic.receiving) { micSilentSince = 0; return }
+  if (!micSilentSince) { micSilentSince = now; return }
+  if (now - micSilentSince < 2500) return
+
+  reacquiring = true
+  micSilentSince = 0
+  const ok = await mic.reacquire()
+  if (debug) console.warn('[drum-buddy] microphone delivered nothing; re-acquired:', ok)
+  setTimeout(() => { reacquiring = false }, 3000)
+  // Even if that fails she keeps playing: the pad sensor picks the exercise up.
+  if (!ok && motion && motion.available) toast('Using the pad sensor', 2500)
+}
 
 function watchForDeafness (peak) {
   if (!scheduler || !scheduler.running || !mic || !mic.available) { loudSince = 0; return }

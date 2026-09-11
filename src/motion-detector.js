@@ -20,6 +20,7 @@ export class MotionInput extends InputSource {
     super('motion')
     this.engine = engine
     this.rest = 0.3            // running estimate of the at-rest magnitude
+    this.window = []           // [time, magnitude] over the last MOTION.windowS seconds
     this.peak = 0
     this.rising = false
     this.lastHit = -1e9
@@ -69,14 +70,28 @@ export class MotionInput extends InputSource {
       : e.accelerationIncludingGravity
     if (!a) return
     const mag = Math.sqrt((a.x || 0) ** 2 + (a.y || 0) ** 2 + (a.z || 0) ** 2)
-
-    // Slow-moving estimate of "nothing happening", so the threshold follows the room
-    // and the way the device is propped up rather than being a fixed number.
-    this.rest += (mag - this.rest) * (mag < this.rest ? 0.12 : 0.01)
-
     const now = this.engine.now
-    const threshold = this.rest * MOTION.spikeOverRest
-    // 1.0 means "just triggered", so the meter reads as a fraction of the bar.
+
+    /*
+     * A rolling window, judged by its median and spread.
+     *
+     * An exponential average collapsed on the real tablet: the sensor reports exact
+     * zeros between hits, so the "resting level" decayed to 1e-136, the threshold went
+     * with it and every sample counted as a strike. A median cannot be dragged to zero
+     * by a run of quiet samples, and the floor stops a perfectly still device becoming
+     * infinitely twitchy.
+     */
+    this.window.push([now, mag])
+    while (this.window.length && now - this.window[0][0] > MOTION.windowS) this.window.shift()
+    if (this.window.length < 20) return
+
+    const sorted = this.window.map((w) => w[1]).sort((x, y) => x - y)
+    const med = sorted[sorted.length >> 1]
+    const p90 = sorted[Math.floor(sorted.length * 0.9)]
+    this.rest = med
+    // Tuned against a real session: 26 of her 32 notes found, 30 ms spread.
+    const threshold = med + Math.max(MOTION.spikeOverSpread * (p90 - med), MOTION.minThreshold)
+
     this._onLevel(mag / (threshold || 1), mag)
 
     if (mag > threshold) {
@@ -87,9 +102,10 @@ export class MotionInput extends InputSource {
         this.lastHit = this.peakAt
         this.emit({
           time: this.peakAt,
-          strength: this.peak / (this.rest || 1),
+          strength: this.peak,
           source: 'motion',
-          // Flagged so nothing downstream can quietly take a timestamp from here.
+          // Flagged so nothing downstream takes a timestamp from here while the
+          // microphone is delivering one.
           timingTrusted: MOTION.timingTrusted,
         })
       }

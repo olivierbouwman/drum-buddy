@@ -116,9 +116,10 @@ export class FusedInput extends InputSource {
     if (motion) {
       motion.onHit((hit) => {
         this.recentMotion.push(hit.time)
-        // Only a timing source when there is nothing better.
-        if (!mic || !mic.available) {
-          this.emit({ ...hit, corroborated: false, timingTrusted: false })
+        // Takes over whenever the microphone is not actually delivering — a granted
+        // stream that produces nothing is worse than no stream, because it looks fine.
+        if (!this.micWorking) {
+          this.emit({ ...hit, corroborated: false, timingTrusted: true, source: 'motion' })
         }
       })
     }
@@ -126,10 +127,16 @@ export class FusedInput extends InputSource {
     this.available = !!((mic && mic.available) || (motion && motion.available))
   }
 
+  /** A granted microphone that delivers nothing is not a working microphone. */
+  get micWorking () {
+    return !!(this.mic && this.mic.available && this.mic.receiving)
+  }
+
   /** Which sensor is actually deciding when a hit happened. */
   get timingSource () {
-    if (this.mic && this.mic.available) return 'mic'
+    if (this.micWorking) return 'mic'
     if (this.motion && this.motion.available) return 'motion'
+    if (this.mic && this.mic.available) return 'mic-silent'
     return 'none'
   }
 

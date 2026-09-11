@@ -15,6 +15,9 @@ export class MicInput extends InputSource {
     this.engine = engine
     this.recordSeconds = recordSeconds
     this._onAudio = null
+    /** Whether audio is actually arriving — separate from whether a stream was granted. */
+    this.receiving = false
+    this.lastAudioAt = 0
     this.stream = null
     this.node = null
     this.error = null
@@ -80,9 +83,13 @@ export class MicInput extends InputSource {
         this.emit({ time: m.time, strength: m.strength, levels: m.levels, source: 'mic' })
       } else if (m.type === 'click') {
         this._onClick(m.time, m.level, m.levels)
+      } else if (m.type === 'noInput') {
+        this.receiving = false
       } else if (m.type === 'audio') {
         if (this._onAudio) { this._onAudio(m); this._onAudio = null }
       } else if (m.type === 'level') {
+        this.receiving = true
+        this.lastAudioAt = Date.now()
         this.level = m.peak
         this._onLevel(m.peak, m.levels)
       }
@@ -90,6 +97,37 @@ export class MicInput extends InputSource {
 
     this.available = true
     return true
+  }
+
+  /**
+   * Throw the stream away and get a new one.
+   *
+   * On the real tablet a granted microphone stopped delivering after about fifty
+   * milliseconds and never recovered — most likely the previous page still holding the
+   * device across a reload. getUserMedia succeeds, the track looks live, and nothing
+   * comes out. Re-acquiring is the only cure.
+   */
+  async reacquire () {
+    try {
+      if (this.stream) this.stream.getTracks().forEach((t) => t.stop())
+      const s = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          channelCount: 1,
+        },
+      })
+      if (this.source) try { this.source.disconnect() } catch {}
+      this.stream = s
+      this.source = this.engine.ctx.createMediaStreamSource(s)
+      this.source.connect(this.node)
+      this.receiving = false
+      return true
+    } catch (err) {
+      this.error = err.name
+      return false
+    }
   }
 
   /**

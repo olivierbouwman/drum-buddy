@@ -376,9 +376,13 @@ var DrumOnsetProcessor = class extends AudioWorkletProcessor {
 	}
 	process(inputs) {
 		const input = inputs[0];
-		if (!input || input.length === 0) return true;
-		const ch = input[0];
-		if (!ch) return true;
+		const ch = input && input.length ? input[0] : null;
+		if (!ch) {
+			this.silentQuanta = (this.silentQuanta || 0) + 1;
+			if (this.silentQuanta % 200 === 0) this.port.postMessage({ type: "noInput" });
+			return true;
+		}
+		this.silentQuanta = 0;
 		if (this.listening) {
 			const hits = this.det.process(ch, currentFrame);
 			for (const h of hits) this.port.postMessage({

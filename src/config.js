@@ -121,9 +121,22 @@ export const DETECTOR = {
  */
 export const MOTION = {
   minRateHz: 25,        // below this the sensor is useless even for confirmation
-  spikeOverRest: 3.0,   // magnitude ratio that counts as a hit
-  refractoryMs: 90,
-  timingTrusted: false, // never take the timestamp from this sensor while the mic works
+  windowS: 3.0,         // how much history the median and spread are taken over
+  /**
+   * A hit is the median plus this many times the gap up to the 90th percentile.
+   * Tuned against a real session on the tablet: k=2 found 26 of her 32 notes with 30 ms
+   * of spread, and was insensitive to the floor, which is what robust looks like.
+   */
+  spikeOverSpread: 2.0,
+  minThreshold: 0.3,    // absolute floor, so a perfectly still device isn't twitchy
+  refractoryMs: 120,
+  /**
+   * The microphone still times a hit when it can: it is sample-accurate and this is
+   * not. But measured on the real tablet this sensor reaches 30 ms of spread, which is
+   * well inside a beginner's own ~70 ms — so when the microphone delivers nothing, this
+   * carries the exercise rather than leaving her with no feedback at all.
+   */
+  timingTrusted: true,
 }
 
 export const FUSION = {
