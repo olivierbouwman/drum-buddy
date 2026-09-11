@@ -1,258 +1,225 @@
 # Drum Buddy
 
-A drum timing trainer for a young beginner with a rubber practice pad, two sticks, and
-a lesson once a week.
+A drum timing trainer for a young beginner with a rubber practice pad, two sticks, and a
+lesson once a week.
 
-It plays a beat out loud, listens, and shows how her hits sit against it — as a rabbit
-(a bit quick), a turtle (a bit slow), or a star (right on it). A jug band wakes up one
-member at a time as her streak grows, so the reward for playing steadily is more music.
+It plays a beat out loud, feels her hits through the tablet resting on the pad, and shows
+how they sit against the beat — a rabbit for a bit quick, a turtle for a bit slow, a star
+for right on it. Five minutes of actual drumming a day, and it decides what to practise.
 
 **Play it:** https://olivierbouwman.github.io/drum-buddy/
 
 ## The one rule
 
-The app must never tell an on-time child that she is late.
+**The app must never tell an on-time child that she is late.**
 
-Speaker output plus microphone input adds 30–150 ms of delay that is mathematically
-indistinguishable from playing late. Left uncorrected, this app would tell a perfectly
-on-time eight-year-old she is always behind, and she would spend weeks trying to fix a
-bug. Three things exist purely to prevent that, and nothing else in the codebase is
-allowed to be more complicated than it needs to be:
+Speaker output plus sensor input adds delay that is mathematically indistinguishable from
+playing late. Uncorrected, this app would tell a perfectly on-time eight-year-old she is
+always behind, and she would spend weeks trying to fix a bug. Three things exist purely to
+prevent that:
 
-1. **Latency calibration** — measures the real round trip and subtracts it.
-2. **Order-preserving beat matching with a displacement guard** — stops a child who is
-   a whole beat behind from being scored as perfect. See `src/scoring.js`.
-3. **Steadiness as the headline metric** — spread doesn't depend on the calibration at
-   all, so it stays honest even when calibration fails. It also avoids branding a child
-   a "rusher" for anticipating the beat, which is normal and expected at this age.
+1. **Latency correction** — what the browser reports, plus the sensor's own delay, plus a
+   head start on the click so the sound lands when the app says it will.
+2. **Order-preserving beat matching with a displacement guard** — stops a child who is a
+   whole beat behind from being scored as perfect (`src/scoring.js`).
+3. **Steadiness as the headline** — spread barely depends on the latency constants, so it
+   stays honest even when they are off. It also avoids branding a child a rusher for
+   anticipating the beat, which is normal at this age.
 
-`npm test` covers all of this, including the sign convention, and gates deployment.
+The other half of that rule: **her own playing must never feed back into the timing
+constants.** Doing so would centre her errors on zero by construction — a child who rushes
+would be told she is perfect, and the app would have erased the thing it exists to show
+her. The `?tune` screen deliberately *displays* her measured offset rather than zeroing it.
 
-## What each sensor is for
+`npm test` covers this, including the sign convention, and gates deployment.
 
-**The pad sensor decides when she hit.** An accelerometer is physically immune to the two
-hardest problems here — the metronome bleeding out of the speaker, and a noisy room —
-and needs no per-room tuning at all. On the real tablet it finds her notes with about
-30 ms of spread, comfortably inside a beginner's own.
+## How it senses her
 
-**The microphone scores nothing.** It keeps two jobs the pad cannot do:
+**The accelerometer decides when she hit.** The tablet rests on the practice pad and feels
+the strike. It is physically immune to the two hardest problems here — the metronome
+bleeding out of the speaker, and a noisy room — and needs no per-room tuning.
 
-1. **Measuring how late everything is.** Its own click, heard coming back, is the only
-   objective latency reference available. Without one, "never tell an on-time child she
-   is late" is a hope rather than a property. This has been completely reliable
-   throughout — every run, steady to a fraction of a millisecond — while microphone
-   *detection* caused nearly every bug in this project.
-2. **Standing in when there is no pad sensor**, such as on a laptop.
+**The microphone scores nothing and times nothing.** It is a fallback for a device that
+cannot feel the pad, such as a laptop. It used to measure latency and check the volume;
+neither survived contact with the tablet, and a dead microphone now costs nothing.
 
-### Getting the pad's correction right
+## Timing, and the four bugs that hid in it
 
-The two sensors need *different* corrections, and sharing one cost 215 ms: the microphone
-round trip includes the time for sound to travel INTO the device, and a wrist has no such
-path. Applying the mic's number to a pad hit made the app think she was early, and she
-compensated by hitting a third of a beat late.
+Every number below was measured on the actual device. Each of these was invisible from the
+outside and produced the same symptom — "the sound feels late" — from a different cause.
 
-Three measurements are available, and together they over-determine the answer:
+**`ctx.currentTime` is not a clock.** On this tablet it advances in 85 ms steps — one
+4096-frame output buffer — and stands perfectly still in between. Every hit stamped with it
+was snapped to that grid before anything else happened. A uniform error that wide has a
+p90−p10 of 68 ms, and the app had been reporting a "spread" of about 70 ms: it was
+measuring its own clock. `engine.nowFine` recovers real time by tracking the *minimum* of
+`performance.now() − currentTime` across many samples — the sample taken just after a tick,
+where the staircase error is nearly zero. Averaging would bake in half a step.
 
-| | what it is | how it's obtained |
-| --- | --- | --- |
-| `L` | mic round trip = out + in | the app's own click, heard back |
-| `D_tap` | pad reporting delay | tap the screen: one event, two sensors, no human timing involved |
-| `D_cross` | pad − mic on a real strike | a stick hit is heard *and* felt |
+**Web Audio has two latencies in series.** `baseLatency` (graph → audio subsystem) and
+`outputLatency` (subsystem → speaker) are additive per the spec, and the app counted only
+the second. The click therefore came out a whole `baseLatency` late, every beat.
 
-Since `D_cross = padDelay − inLat`, the exact answer is **`K_pad = L + D_cross`** — the tap
-term cancels entirely. That version is preferred whenever the microphone has heard enough
-of her strikes, and it is also the only one free of the shape mismatch between a finger on
-glass and a stick on rubber.
+**`outputLatency` is not a constant.** It was read once at startup. Android changes it
+mid-session — a real run recorded it moving 169 ms → 86 ms as the audio path reconfigured.
+Everything downstream is a function of it, so the app went 83 ms wrong partway through a
+practice and stayed wrong. It is now re-read every 250 ms, and both the pad correction and
+the click's head start recompute when it moves.
 
-When the microphone hears nothing, it falls back to the tap measurement plus an estimate
-of the output half. Checked against a real session that lands within 7 ms of what her
-playing needed, against 215 ms for the old behaviour.
+**A calibration reference had the output latency folded into it.** Screen-tap calibration
+was stamped through the animation clock, which carries output latency by design — so the
+measured "pad delay" was really *sensor delay + output latency*, and it was then added a
+second time. 356 ms was being subtracted where 185 ms was right.
 
-## Continuous calibration
+### Where the numbers come from now
 
-The latency constant is re-measured **every beat**, for the whole session.
+| Term | Source |
+| --- | --- |
+| Output latency | `ctx.outputLatency`, re-read continuously |
+| Pad sensor delay | ~15 ms constant; measurable with `?calibrate`, hand-settable in `?tune` |
+| Click head start | `?tune` if set, else `baseLatency`, else half the mic round trip |
 
-This is not a refinement. Measured on the real device, the round trip was 353 ms during
-one take and 394 ms ninety seconds later in the same session, each rock-steady within
-itself. A single calibration at start-up would have been 41 ms wrong by the end of a
-short practice — the entire width of the "perfect" window. She would be told she was on
-time at the start of an exercise and late at the end of it, purely from drift.
+A hand-set value outranks every derivation, and **pins** the pad delay so no live
+cross-calibration can silently replace it mid-session.
 
-**What adapts continuously, and what must never:**
+### What was tried and did not work
 
-| Adapts | From what | Why it's safe |
-| --- | --- | --- |
-| Detection threshold | Per-band noise floor | Only affects *whether* a hit is seen, not *when* |
-| Latency constant K | The metronome click heard back through the mic | The app generated the click; it knows nothing about her playing |
-| Double-hit rejection | The note spacing the exercise asks for | Fixed by the music, not by her |
+Kept because the negative results are load-bearing.
 
-The one thing that must **never** feed back is her own playing. Adapting K from her hits
-would centre her errors on zero by construction: a child who consistently rushes would
-be told she is perfect, and the app would have erased the very thing it exists to show
-her. There is deliberately no API for a hit to reach `TimingModel`, and a test asserts
-it stays that way.
+- **Deriving the head start.** `baseLatency` said 85 ms; half the measured 496 ms round trip
+  said 77 ms. Tuned by ear: **125 ms**. Two independent estimates agreeing was not evidence
+  they were right — they shared the assumption that the reported figures describe the whole
+  path, and that is what failed.
+- **Hearing the speaker with the accelerometer.** Would have measured output latency with no
+  microphone and no human. This tablet's accelerometer *latches* when still: 3177 samples
+  across 48 seconds, one value, both channels. No dither, so no amount of averaging recovers
+  anything. `tools/speaker-latency.mjs` performs the test and reports it honestly.
+- **Blaming the clocks for drift.** Measured at **6 ppm** — 2 ms across a session.
+  `tools/clock-drift.mjs` fits the slope; the answer was the stale `outputLatency` above.
 
-Discriminating the click from a drum hit is easy because they are opposites — the click
-is sustained narrowband energy with nothing up high, a stick is a broadband impulse.
-Against the real recordings this gives sub-millisecond agreement with an independent
-matched-filter analysis, and **zero** phantom clicks from fifteen seconds of drumming.
+## `?tune` — setting it by ear
 
-If the number stops holding still, the app stops scoring and says so, rather than
-reporting timing it cannot stand behind. Refusal keys on instability, not size.
+Long-press the title on the start screen (or tap it five times, or use `?tune`). Two steps:
+
+1. **Line the beep up with the flash.** An endless beat and a circle that flashes on the beat
+   grid. The onset is instantaneous and lasts three frames, and it lands on a real animation
+   frame rather than a `setTimeout` — a tuner whose own light jitters by 15 ms cannot resolve
+   anything finer.
+2. **Drum along and read the number.** Deliberately a readout, not a "tap and I'll work it
+   out". Taking the median of someone's playing and calling it zero would define on-time as
+   wherever that person plays, and the child would inherit an adult's lean. The number
+   separates what feel cannot: whether the app is wrong, or whether you are simply early.
+
+Stored per device, shared by every player — it describes the tablet, not the person.
+
+## The daily five minutes
+
+Bars are derived from a **time target**, not fixed, so the session stays five minutes as she
+gets faster. Fixed bar counts made it quietly shorter — and a bar-*count* ceiling did the
+same thing again at the top of the tempo range, since a bar at 120 BPM is a third of a bar
+at 40. The cap is a duration now, and every tempo from 40 to 120 gets its five minutes.
+
+A session is: a warm-up, today's focus, **the other hand** where the exercise is
+hand-specific, and a favourite to finish. Practising the right hand twice and the left not
+at all is how a weak hand stays weak.
+
+Seven exercises, as plain data in `src/exercises.js`. Tempo rises when she is steady at the
+current one and eases back if she is struggling — silently, because telling a child the app
+thinks she got worse is the opposite of the point. The weekly goal is four days, not seven:
+she has a lesson day and will miss days.
 
 ## Running it
 
 ```sh
 npm install
 npm run dev          # http://localhost:5174
-npm test             # timing and scoring tests
+npm run dev:lan      # HTTPS on the LAN, for testing on the tablet
+npm test             # 219 assertions across 8 files; gates deployment
 npm run build
 ```
 
-`?debug` adds a parent/teacher panel with the raw numbers (milliseconds, drift,
-extra hits). Those never appear on the child's screen.
-
-For an iPad you need HTTPS — both `getUserMedia` and `DeviceMotionEvent` require a
-secure context, and `localhost` doesn't apply. Either open the deployed URL above, or
-run `npm run dev:lan` and accept the self-signed certificate once.
-
-## It tunes itself
-
-There is no setup step. The app works out, on its own, which frequencies separate her
-drum from the metronome bleeding out of *this* speaker in *this* room — the thing that
-originally took an offline recording session.
-
-It can do that because it already has everything the recording provided:
-
-| What it needs | Where it gets it, for free |
+| URL | What it does |
 | --- | --- |
-| Round-trip latency | Its own click, heard back, every beat |
-| The metronome's spectrum | The same click — sampled across the filterbank on arrival |
-| The room's own noise | The gaps between count-in clicks |
-| Her drum's spectrum | Every hit carries its per-band levels |
-| Which bands to trust | The margin between those |
+| `?debug` | Parent panel: raw milliseconds, drift, extra hits. Never on her screen. |
+| `?tune` | Set the sound/picture offset by ear. Also via long-press on the title. |
+| `?selftest` | End-to-end honesty check — see below. |
+| `?calibrate` | Re-measure the pad sensor delay by tapping the screen. |
+| `?speakertest` | Can the accelerometer feel the speaker? (On this tablet: no.) |
 
-The four-beat count-in is the key: the metronome is playing and she is meant not to be,
-at the start of every single exercise, forever. Samples spoiled by her playing anyway
-are simply discarded — telling an eight-year-old to hold still mostly would not work.
+`dev:lan` also enables diagnostics — the tablet uploads snapshots, full session traces and
+clock traces to the dev server, which is how most of the bugs above were found. Local
+network only, measurements only, and off entirely in the deployed build.
 
-Two guardrails. Bleed is measured at a high percentile and hits at a low one, so the
-margin is the pessimistic case rather than the flattering average. And the level gate
-can never rise above her softest hits: going quietly deaf would look exactly like the
-app ignoring her, which is worse than the occasional false trigger.
+### `?selftest`
 
-Verified in `test/autotune.test.mjs` by handing the learner a candidate list that
-deliberately *includes* the bands the click lives in, and replaying real audio: it drops
-them unaided and reaches zero false triggers from the metronome.
+Plays sixteen fake hits through the speaker, each exactly 50 ms after the beat, and asserts
+the app reports +50 ms. That exercises the whole chain on real hardware with no human
+involved. **Run it first on any new device, and first if the feedback ever looks wrong.** It
+refuses to certify a pass it cannot evidence.
 
-### Difficulty looks after itself too
+## Installing on the tablet
 
-Timing windows sit on an **Auto** setting by default. After each attempt the app looks at
-the median of her recent steadiness and moves the level when she has clearly outgrown it,
-with hysteresis so it cannot flap and so one lucky attempt cannot promote her. Levelling
-up is a celebration; easing back happens silently, because telling a child the app thinks
-she got worse is the opposite of the point. Any of the three levels can still be pinned
-by hand.
+"Add to Home screen" in Chrome gives a genuine fullscreen window — the Fullscreen API is
+granted and then silently ignored on this device, leaving 168 px of browser chrome. Install
+from the deployed URL, not the LAN address: Android builds the app package on Google's
+servers, which cannot reach a private IP, so it reports "Installing…" and then nothing.
 
-## Checking it isn't lying — `?selftest`
-
-Open **`/?selftest`** on the device she practises on, press Play, then Run.
-
-It plays sixteen fake hits through the speaker, each exactly 50 ms after the beat, and
-asserts the app reports +50 ms back. That exercises the entire chain on real hardware —
-speaker, room, microphone, continuous latency calibration, detection, scoring — with no
-human involved.
-
-The arithmetic is exact, which is what makes it a fair test. A real stick struck at time
-T is heard at T + inputLatency, and the app subtracts K = outputLatency + inputLatency,
-reporting T − noteTime − outputLatency: her error as she perceives it, since she hears
-the click late by the output latency too. A synthetic hit scheduled at graph time S
-emerges at S + outputLatency and is heard at S + outputLatency + inputLatency, so after
-the same K the app reports exactly S − noteTime.
-
-**Run this first on any new device, and first if the feedback ever looks wrong.** A
-failure means the numbers she is being shown are wrong. It refuses to certify a pass it
-cannot evidence: if it can't hear the test hits, it says so rather than reporting success.
-
-## Re-measuring by hand (optional)
-
-Not needed in normal use — the app tunes itself. Reach for this only to investigate a
-device where detection misbehaves, or to regenerate the test fixtures.
-
-1. Open `/tools/record.html` on the device in question.
-2. Do the five short takes it walks you through, about three minutes.
-3. Move the downloaded files into `tools/recordings/`.
-4. `npm run analyse` for the spectra, `node tools/tune.mjs --sweep` for detector settings.
-
-`node tools/make-fake-recordings.mjs` writes synthetic takes so the tools can be
-exercised without a drum pad. With real recordings present, `npm test` additionally
-replays them and asserts the calibration and the band learner still behave.
-
-### What the first measurement found (2026-09-10, Android Chrome)
-
-Three things guesswork would have got wrong:
-
-- **One biquad per band is not enough.** A single 2nd-order bandpass rolls off at only
-  6 dB/octave, leaving the 900 Hz metronome click barely 13 dB down inside the 2.5 kHz
-  band — so it triggered the detector as readily as a real drum hit. An FFT view of the
-  same bands looks perfectly clean and hides this completely. Cascading three biquads
-  took false triggers from the metronome from 6 to **0**.
-- **Round-trip latency is 353 ms** — and drifted to 394 ms ninety seconds later in the
-  same session, each rock-steady within itself. That is why calibration is continuous.
-- **The accelerometer is a confirmation sensor, not a timing source.** It feels hits
-  clearly (21 dB spike-to-rest at 60 Hz) but its timestamps scatter ~38 ms against the
-  microphone, because `DeviceMotionEvent` delivery waits on the main thread.
+The installed app **updates itself**. There is no address bar to reload from, so it checks
+on launch and on returning to the foreground, and applies a waiting build only when no
+exercise is running — a reload mid-take would drop the run.
 
 ## How it's put together
 
 | File | What it does |
 | --- | --- |
-| `src/config.js` | Every tunable number, in one place |
-| `src/scoring.js` | Beat matching and statistics — the correctness heart |
+| `src/config.js` | Every tunable number, in one place, with the reasoning |
+| `src/timing-model.js` | Owns the latency constants — the correctness heart |
+| `src/scoring.js` | Beat matching, steadiness, drift, streaks |
+| `src/practice-plan.js` | Builds the daily five minutes |
+| `src/audio-engine.js` | AudioContext lifecycle, and the clock mapping everything depends on |
 | `src/scheduler.js` | Lookahead metronome scheduling |
-| `src/audio-engine.js` | AudioContext lifecycle and the audio↔animation clock mapping |
-| `src/input-sources.js` | Taps now; microphone and accelerometer behind the same interface |
-| `src/exercises.js` | The beginner ladder, as plain data |
-| `src/visuals.js` | Bouncing ball and per-hit feedback |
+| `src/motion-detector.js` | Pad sensor: threshold, peak picking, rebound rejection |
+| `src/onset-detector.js` | Microphone fallback: filterbank onset detection |
+| `src/dsp-core.js` | Pure DSP shared by the worklet, the tests and the offline tools |
+| `src/visuals.js` | Falling notes in two lanes, strike lines, per-hit feedback |
+| `src/level-coach.js` | Moves the difficulty as she improves |
+| `src/diagnostics.js` | Dev-server-only telemetry |
 
-**Invariant:** everything measured lives in `AudioContext` time. `performance.now()` is
-used only for animation. Mixing the two is how timing bugs get in.
+**Invariant:** everything measured lives in `AudioContext` time; `performance.now()` is for
+animation and for UI gestures only. Mixing the two is how timing bugs get in — and reaching
+for the measurement clock to time a *gesture* is how "hit the pad three times" broke.
 
 ## Accessibility
 
-No verdict is ever carried by colour alone — each is an animal, a word, and a position
-on the lane. `prefers-reduced-motion` calms the animation rather than removing the beat
-cue. Fully keyboard operable. All colours were contrast-checked against both background
-tones and pass WCAG AA, most AAA.
-
-## Score, and watching it move
-
-Each attempt ends with one number rather than four statistics, because four is more than
-an eight-year-old should have to synthesise. It weighs, in order:
-
-- **steadiness**, the thing she is actually training and the only part that does not
-  depend on the latency calibration being right;
-- **coverage**, squared, or the winning strategy would be to play three notes beautifully
-  and ignore the rest;
-- **best streak**, because it is the part she cares about;
-- **difficulty**, as a multiplier on notes per minute, so climbing the exercise ladder
-  pays and the high score does not live forever on quarter notes at 60 BPM.
-
-It is deliberately independent of the fussiness level: that setting changes how
-encouraging the words are, not how well she played.
-
-Scores are kept on the device (`localStorage`) so she can see "better than last time",
-"best today", and "best ever" — with a personal best getting its own moment. A worse
-attempt shows a shorter bar, never a red number, and the running best stays in view so
-one bad go never erases a good one.
+No verdict is carried by colour alone — each is an animal, a word, and a position on the
+lane. `prefers-reduced-motion` calms the animation rather than removing the beat cue, and
+nothing flashes above 3 Hz at any tempo. Fully keyboard operable. Colours contrast-checked
+against both background tones: WCAG AA throughout, mostly AAA.
 
 ## Privacy
 
-Audio is analysed in the page and discarded. Nothing is recorded or uploaded, and there
-are no network calls at runtime. Scores, the chosen level, and the last measured latency
-are stored locally on the device and never leave it.
+Audio is analysed in the page and discarded. Nothing is recorded or uploaded, and there are
+no network calls in the deployed build. Scores, level, players and the timing constants live
+in `localStorage` and never leave the device. Diagnostics exist only on the dev server, stay
+on the local network, and carry measurements rather than audio.
+
+## To do
+
+- **Badges and rewards.** Asked for, never built. Roughly ten milestones, a collection screen
+  with silhouettes for unearned ones, CSS-only animation.
+- **Re-check the tuned offset.** The installed app carries 125 ms, set while the device
+  reported 169 ms output latency. The best-measured run derived 43 ms at the current 86 ms.
+  If the sound feels early, `?tune` → **Start over** clears it and lets it derive.
+- **Decide what a changing `outputLatency` means for a tuned offset.** The app assumes the
+  reported figure is honest and keeps the tuned head start fixed. If instead only the
+  *report* moves, the head start should move the opposite way. Needs one run in each audio
+  configuration to settle.
+- **Real-audio tests skip in CI** — the recordings are gitignored. A trimmed fixture would
+  let the detector tests run on every push.
+- **The microphone still never corroborates a hit** on this tablet. Not a problem while the
+  pad sensor works, but it means the exact cross-calibrated correction is never available.
 
 ## Not affiliated with anything
 
-The look and the jug band are an affectionate nod to a certain 1977 Christmas special
-about some otters. Made for one kid, shared in case it's useful.
+The look is an affectionate nod to a certain 1977 Christmas special about some otters. Made
+for one kid, shared in case it's useful.
