@@ -10,8 +10,13 @@ import { WINDOWS } from './config.js'
 
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
 
+/** How many beats fit across the screen, and where the ball sits along it. */
+const VISIBLE_BEATS = 5
+const BALL_X = 0.34
+
 export class Visuals {
-  constructor () {
+  constructor (countIn = 4) {
+    this.countIn = countIn
     this.ball = document.getElementById('ball')
     this.padsEl = document.getElementById('pads')
     this.area = document.getElementById('ball-area')
@@ -23,16 +28,55 @@ export class Visuals {
     this._lastPad = -1
   }
 
-  /** Build one landing pad per beat in the bar. */
-  setup (beatsPerBar) {
+  /**
+   * Build the beat strip.
+   *
+   * The strip scrolls leftward under a ball that bounces in one place, rather than the
+   * ball flying back across the screen at the end of each bar. The jump back read as a
+   * glitch and broke the sense of time moving steadily forward.
+   *
+   * One cell per beat of the whole exercise, count-in included. At 8 bars that is ~36
+   * cells, cheap enough not to bother recycling them.
+   *
+   * @param {number} beatsPerBar
+   * @param {number} totalBeats  including the count-in
+   * @param {string[]} countWords one or two words per beat, from the exercise
+   */
+  setup (beatsPerBar, totalBeats, countWords = []) {
     this.beatsPerBar = beatsPerBar
+    this.totalBeats = totalBeats
     this.padsEl.innerHTML = ''
     this.pads = []
-    for (let i = 0; i < beatsPerBar; i++) {
-      const p = document.createElement('div')
-      p.className = 'p'
-      this.padsEl.append(p)
-      this.pads.push(p)
+
+    const perBeat = countWords.length && countWords.length % beatsPerBar === 0
+      ? countWords.length / beatsPerBar
+      : 0
+
+    for (let i = 0; i < totalBeats + VISIBLE_BEATS; i++) {
+      const cell = document.createElement('div')
+      cell.className = 'cell'
+      const inBar = ((i - this.countIn) % beatsPerBar + beatsPerBar) % beatsPerBar
+      if (inBar === 0) cell.classList.add('downbeat')
+
+      const bar = document.createElement('div')
+      bar.className = 'p'
+      cell.append(bar)
+
+      if (perBeat) {
+        const words = document.createElement('div')
+        words.className = 'w'
+        for (let k = 0; k < perBeat; k++) {
+          const sp = document.createElement('span')
+          const word = countWords[(inBar * perBeat + k) % countWords.length]
+          sp.textContent = word
+          if (word.startsWith('(') || word === '&') sp.className = 'soft'
+          words.append(sp)
+        }
+        cell.append(words)
+      }
+
+      this.padsEl.append(cell)
+      this.pads.push(bar)
     }
     this._lastPad = -1
   }
@@ -59,34 +103,31 @@ export class Visuals {
   /** @param {number} phase fractional beats since the count-in started */
   frame (phase) {
     if (!this.pads.length) return
-    const n = this.pads.length
-    const beat = Math.floor(phase)
-    const f = phase - beat
-
-    const from = ((beat % n) + n) % n
-    const to = (from + 1) % n
 
     const rect = this.area.getBoundingClientRect()
-    const padRects = this.pads.map((p) => p.getBoundingClientRect())
-    const cx = (i) => padRects[i].left - rect.left + padRects[i].width / 2
-
+    const spacing = rect.width / VISIBLE_BEATS
+    const ballX = rect.width * BALL_X
     const bw = this.ball.offsetWidth
-    // Keep the arc comfortably inside the area so the ball never leaves the screen,
-    // and low enough that the rise and fall read as one gesture rather than a launch.
-    const arc = Math.max(40, rect.height * 0.62)
 
-    if (reduced.matches) {
-      // No flight: the ball simply sits on the pad for the current beat.
-      this.ball.style.transform = `translate(${cx(from) - bw / 2}px, ${-14}px)`
-    } else {
-      const x = cx(from) + (cx(to) - cx(from)) * f
-      const y = 4 * arc * f * (1 - f)
-      this.ball.style.transform = `translate(${x - bw / 2}px, ${-y - 14}px)`
+    // Slide the strip so that the cell for beat k sits under the ball exactly at
+    // phase == k. Under reduced motion the strip steps a whole beat at a time instead
+    // of gliding; the beat cue stays, it just stops moving continuously.
+    const shown = reduced.matches ? Math.floor(Math.max(0, phase)) : phase
+    this.padsEl.style.transform = `translateX(${ballX - shown * spacing - spacing / 2}px)`
+    if (this._spacing !== spacing) {
+      this._spacing = spacing
+      this.padsEl.style.setProperty('--cell', spacing + 'px')
     }
+
+    const beat = Math.floor(phase)
+    const f = phase - beat
+    const arc = Math.max(40, rect.height * 0.62)
+    const y = reduced.matches ? 0 : 4 * arc * f * (1 - f)
+    this.ball.style.transform = `translate(${ballX - bw / 2}px, ${-y - 14}px)`
 
     if (beat !== this._lastPad && phase >= 0) {
       this._lastPad = beat
-      this.flashPad(from)
+      this.flashPad(beat)
     }
   }
 

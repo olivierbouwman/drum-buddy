@@ -6,6 +6,10 @@
 <meta name="theme-color" content="#0d2330">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Drum Buddy</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="./icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Nunito:wght@400;700;800&display=swap">
@@ -30,6 +34,8 @@
   </div>
 
   <button id="btn-play" class="huge">▶ Play</button>
+
+  <button id="btn-fullscreen" class="ghost" hidden>⛶ Full screen</button>
 
   <p class="fineprint" id="start-note">
     Uses the microphone to hear your drum. Nothing is recorded or sent anywhere.

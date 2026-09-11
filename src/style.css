@@ -181,20 +181,18 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 
 /* What to say out loud. Counting aloud is how the subdivision gets internalised, so
    it gets real estate rather than being buried in the exercise description. */
-.count-words {
-  flex: 0 0 auto; width: 100%;
-  display: flex; justify-content: space-around; align-items: baseline;
-  font-size: clamp(.9rem, 3.4vw, 1.35rem); font-weight: 800;
-  color: var(--quick);
-}
-/* Each word sits under the pad it belongs to, so the words and the beats line up. */
-.count-words span { flex: 1 1 0; text-align: center; }
-.count-words span.soft { opacity: .5; }
+/* Counting now rides inside each beat cell so it scrolls with the pads and stays
+   aligned; this element is kept only as the screen-reader-visible text. */
+.count-words { display: none; }
 
 .ball-area {
   position: relative; width: 100%; flex: 1 1 auto;
-  min-height: 26vh; max-height: 34vh;
+  min-height: 30vh; max-height: 38vh;
   display: flex; align-items: flex-end;
+  overflow: hidden;                     /* the strip runs past both edges */
+  /* Fade the strip out at the edges so cells arrive and leave instead of popping. */
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
 }
 
 /* Count-in sits over the ball area, big enough to read from across the room. */
@@ -227,12 +225,27 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
   box-shadow: 0 0 18px #cfe3ec55;
 }
 
+/* The beat strip. Wider than the screen and slid leftward each frame, so the ball can
+   bounce in one place instead of flying back across at the end of every bar. */
 .pads {
-  position: absolute; left: 0; right: 0; bottom: 0;
-  display: flex; justify-content: space-around; align-items: flex-end;
+  position: absolute; left: 0; bottom: 0;
+  display: flex; align-items: flex-end;
+  will-change: transform;
 }
+.cell {
+  width: var(--cell, 6rem); flex: 0 0 auto;
+  display: flex; flex-direction: column; align-items: center; gap: .45rem;
+}
+/* Beat 1 of each bar gets a brighter pad, so she can see the bar turning over. */
+.cell.downbeat .p { border-color: var(--kraft); background: #ffffff33; }
+.cell .w {
+  display: flex; justify-content: space-around; width: 100%;
+  font-size: clamp(.8rem, 3vw, 1.2rem); font-weight: 800; color: var(--quick);
+}
+.cell .w span { flex: 1 1 0; text-align: center; }
+.cell .w span.soft { opacity: .5; }
 .pads .p {
-  width: clamp(3.4rem, 19vw, 6.5rem); height: 16px; border-radius: 10px;
+  width: 74%; height: 16px; border-radius: 10px;
   background: #ffffff26; border: 3px solid var(--line);
   box-shadow: inset 0 2px 0 #ffffff1f;
   transition: background-color .1s ease, transform .1s ease, box-shadow .1s ease;

@@ -9,7 +9,7 @@
  * interface without touching anything in here.
  */
 
-import { TEMPO, BAND, DRUM_NAV, WINDOWS } from './config.js'
+import { TEMPO, BAND, DRUM_NAV, SCHEDULER } from './config.js'
 import { EXERCISES } from './exercises.js'
 import { AudioEngine } from './audio-engine.js'
 import { ClickSource } from './click-source.js'
@@ -64,13 +64,15 @@ $('btn-play').addEventListener('click', async () => {
     clicks = new ClickSource(engine.ctx)
     await clicks.prepare()
     scheduler = new Scheduler(engine, clicks)
-    visuals = new Visuals()
+    visuals = new Visuals(SCHEDULER.countInBeats)
     input = new TapInput(engine)
     input.start()
 
     engine.onStateChange((s) => {
       if (s !== 'running') toast('Tap anywhere to keep going')
     })
+
+    keepAwake()
 
     runWarmup()
   } catch (err) {
@@ -129,6 +131,11 @@ function onHits (fn) {
 let offHits = null
 
 function startExercise (index) {
+  // Always tear down first. Without this a second call while one is running leaves the
+  // old hit listener subscribed, and every hit gets recorded twice — which shows up as
+  // a pile of phantom "extra hits" rather than as an obvious crash.
+  stopPlay()
+
   const ex = EXERCISES[index]
   state.exerciseIndex = index
   state.hits = []
@@ -137,12 +144,12 @@ function startExercise (index) {
   show('play')
   $('ex-name').textContent = ex.name
   $('ex-tip').textContent = ex.tip
-  renderCount(ex.count)
   $('bpm-readout').textContent = state.bpm
   $('play-sr').textContent =
     `${ex.name}. ${ex.blurb} ${ex.tip} Count: ${ex.count}. Tempo ${state.bpm} beats per minute.`
 
-  visuals.setup(ex.beatsPerBar)
+  visuals.setup(ex.beatsPerBar, SCHEDULER.countInBeats + ex.beatsPerBar * ex.bars,
+    ex.count.trim().split(/\s+/))
   visuals.clearHands()
   renderBand(0)
   $('streak').innerHTML = '<b>0</b> in a row'
@@ -212,19 +219,6 @@ function updateStreak () {
   renderBand(s.streak)
 }
 
-/** One word per note, spread across the same width as the pads so they line up. */
-function renderCount (count) {
-  const host = $('count-words')
-  host.innerHTML = ''
-  for (const word of count.trim().split(/\s+/)) {
-    const el = document.createElement('span')
-    el.textContent = word
-    // Bracketed counts are rests — say them, don't play them.
-    if (word.startsWith('(') || word === '&') el.className = 'soft'
-    host.append(el)
-  }
-}
-
 /** Band members wake up as the streak grows. Nobody ever leaves. */
 let bandShown = -1
 function renderBand (streak) {
@@ -271,6 +265,7 @@ function stopPlay () {
 
 function abortToStart () {
   stopPlay()
+  letSleep()
   bandShown = -1
   show('start')
   $('btn-play').disabled = false
@@ -359,6 +354,64 @@ function armDrumToContinue () {
   disarm = () => { clearTimeout(timer); off(); disarm = () => {} }
 }
 
+// ---------------------------------------------------------- screen and sleep
+
+/**
+ * Keep the screen on while she is practising.
+ *
+ * A tablet sleeping after 30 seconds is fatal here: she is holding sticks and hitting a
+ * pad, so she never touches the screen and the OS has no idea she is still using it.
+ *
+ * The lock is dropped automatically whenever the page is hidden, so it has to be taken
+ * again on the way back.
+ */
+let wakeLock = null
+
+async function keepAwake () {
+  if (!('wakeLock' in navigator) || wakeLock) return
+  try {
+    wakeLock = await navigator.wakeLock.request('screen')
+    wakeLock.addEventListener('release', () => { wakeLock = null })
+  } catch {
+    // Denied, unsupported, or the tab isn't visible. Not worth bothering her about.
+  }
+}
+
+async function letSleep () {
+  try { if (wakeLock) await wakeLock.release() } catch { /* already gone */ }
+  wakeLock = null
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && !$('screen-start').classList.contains('on')) keepAwake()
+})
+
+/**
+ * Full-screen toggle, for when it's opened as a normal browser tab rather than
+ * installed. Hidden when it can't work (iOS Safari won't full-screen a document) or
+ * when it's pointless (already installed and running full screen).
+ */
+const canFullscreen = !!document.documentElement.requestFullscreen
+const installed = window.matchMedia('(display-mode: fullscreen)').matches ||
+                  window.matchMedia('(display-mode: standalone)').matches ||
+                  window.navigator.standalone === true
+
+if (canFullscreen && !installed) {
+  const btn = $('btn-fullscreen')
+  btn.hidden = false
+  const sync = () => {
+    btn.textContent = document.fullscreenElement ? '⛶ Exit full screen' : '⛶ Full screen'
+  }
+  btn.addEventListener('click', async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen()
+      else await document.documentElement.requestFullscreen({ navigationUI: 'hide' })
+    } catch { /* the browser said no; the button just does nothing */ }
+  })
+  document.addEventListener('fullscreenchange', sync)
+  sync()
+}
+
 // ------------------------------------------------------------------ snow
 
 /** Frogtown Hollow is always snowing. Decorative; skipped entirely if she'd rather
@@ -395,7 +448,7 @@ document.addEventListener('visibilitychange', () => {
 
 if (debug) {
   window.drumBuddy = {
-    engine, state, startExercise, EXERCISES,
+    engine, state, startExercise, finishExercise, EXERCISES,
     get stats () { return state.lastStats },
   }
   console.log('[drum-buddy] debug on — window.drumBuddy')
