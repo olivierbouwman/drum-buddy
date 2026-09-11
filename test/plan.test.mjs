@@ -6,6 +6,7 @@
  */
 import { buildPlan, progressFor, tempoFor } from '../src/practice-plan.js'
 import { EXERCISES } from '../src/exercises.js'
+import { DRUM_NAV } from '../src/config.js'
 
 let passed = 0
 let failed = 0
@@ -107,6 +108,39 @@ console.log('\nthe finisher is something she can actually play')
     ['quarters-right', 'quarters-left', 'singles'].includes(plan.steps[3].id), plan.steps[3].id)
   check('the warm-up is still alternating hands', plan.steps[0].id === 'singles',
     plan.steps[0].id)
+}
+
+console.log('\nthe drum-to-start gesture is performable by a person')
+{
+  /*
+   * Ten deliberate hits on the Today screen, every one accepted by every filter, and
+   * the window never held more than two. These are the real gaps.
+   */
+  const GAPS = [1080, 1022, 1034, 1064, 1049, 1125, 998, 1036, 1034]
+
+  const fits = (gaps, withinMs, need) => {
+    let recent = []
+    let t = 0
+    let best = 0
+    for (const g of [0, ...gaps]) {
+      t += g
+      recent = recent.filter((x) => t - x < withinMs)
+      recent.push(t)
+      best = Math.max(best, recent.length)
+      if (recent.length >= need) return true
+    }
+    return best
+  }
+
+  check('the old 1500 ms window could never fit three of her hits',
+    fits(GAPS, 1500, 3) === 2, 'best was ' + fits(GAPS, 1500, 3))
+  check('the real window fits them', fits(GAPS, DRUM_NAV.withinMs, DRUM_NAV.hitsNeeded) === true)
+
+  // Still deliberate: a person tapping once every two seconds is not making a gesture.
+  check('hits two seconds apart do not count as a gesture',
+    fits([2000, 2000, 2000, 2000], DRUM_NAV.withinMs, DRUM_NAV.hitsNeeded) !== true)
+  check('it needs more than two hits however fast they come',
+    fits([200], DRUM_NAV.withinMs, DRUM_NAV.hitsNeeded) !== true)
 }
 
 console.log(`\n${passed} passed, ${failed} failed\n`)

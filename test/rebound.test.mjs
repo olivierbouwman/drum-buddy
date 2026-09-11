@@ -24,10 +24,20 @@ const accepts = (gapMs, peak, lastPeak) => {
 
 console.log('\nthe rebound rule')
 {
-  // From the log: [2.393, 2.82] then [2.560, 0.63].
-  check('her doubled strike is rejected', !accepts(167, 0.63, 2.82))
-  check('the refractory alone would have let it through', 167 > MOTION.refractoryMs,
-    `refractory is ${MOTION.refractoryMs} ms, the rebound arrived at 167 ms`)
+  // Every rebound measured on her tablet so far, from two separate runs.
+  // Gap in ms, then the rebound's strength and the strike's.
+  const REBOUNDS = [
+    [167, 0.63, 2.82],   // first run
+    [266, 0.37, 5.82],   // second run: sailed through the original 250 ms window
+    [300, 0.30, 2.45],   // second run
+  ]
+  for (const [gap, peak, prev] of REBOUNDS) {
+    check(`the ${gap} ms rebound at ${Math.round(peak / prev * 100)}% is rejected`,
+      !accepts(gap, peak, prev))
+  }
+  check('the refractory alone would have let all of them through',
+    REBOUNDS.every(([gap]) => gap > MOTION.refractoryMs),
+    `refractory is ${MOTION.refractoryMs} ms`)
 
   // The two genuine hits either side of it, same log.
   check('a real hit 1078 ms later is kept', accepts(1078, 5.59, 0.63))

@@ -133,21 +133,6 @@ export const DETECTOR = {
    * through while a fixed 150 ms would swallow genuinely fast playing.
    */
   refractoryMs: 120,
-  /*
-   * The rebound rule.
-   *
-   * A single strike on her pad logged twice: the second event 167 ms after the first at
-   * 22% of its strength, clearing the 120 ms refractory by a comfortable margin and
-   * checking off two of the four warm-up dots for one hit. Widening the refractory to
-   * cover it would start swallowing real notes, so this discriminates on shape instead:
-   * a rebound is both close AND much weaker, and a real stroke is not.
-   *
-   * Her two genuine consecutive hits in the same log were 1078 ms and 1298 ms apart, so
-   * 250 ms is nowhere near them; eighth notes at 90 bpm are 333 ms. Worth revisiting if
-   * she ever plays ghost notes, where a deliberately quiet stroke follows a loud one.
-   */
-  reboundMs: 250,
-  reboundRatio: 0.5,
   /**
    * Stick bounce rejection. Careful here: the second note of a DOUBLE stroke is a real
    * note and is often quieter than the first, so these thresholds must stay well below
@@ -212,12 +197,21 @@ export const MOTION = {
    * cover it would start swallowing real notes, so this discriminates on shape instead:
    * a rebound is both close AND much weaker, and a real stroke is not.
    *
-   * Her two genuine consecutive hits in the same log were 1078 ms and 1298 ms apart, so
-   * 250 ms is nowhere near them; eighth notes at 90 bpm are 333 ms. Worth revisiting if
-   * she ever plays ghost notes, where a deliberately quiet stroke follows a loud one.
+   * The window was 250 ms, set from the single example available at the time. The next
+   * run produced two more, at 266 ms and 300 ms, and sailed straight through it — two
+   * taps lit all four warm-up dots. So the window is 400 ms.
+   *
+   * What makes that safe is the ratio, which is the reliable half of this rule: the
+   * three rebounds measured so far came in at 22%, 6% and 12% of the strike before them.
+   * Nothing that quiet is a note. Tightening the ratio to 0.35 while widening the window
+   * leaves real playing further clear than the original pair did — eighth notes at
+   * 90 bpm are 333 ms apart, and the second one is not a third the weight of the first.
+   *
+   * Worth revisiting for ghost notes, where a deliberately quiet stroke follows a loud
+   * one on purpose. Not in anything she plays yet.
    */
-  reboundMs: 250,
-  reboundRatio: 0.5,
+  reboundMs: 400,
+  reboundRatio: 0.35,
   /**
    * The microphone still times a hit when it can: it is sample-accurate and this is
    * not. But measured on the real tablet this sensor reaches 30 ms of spread, which is
@@ -327,5 +321,19 @@ export function applyLevel (level) {
 export const DRUM_NAV = {
   armDelayMs: 2000,     // ignore hits for this long after a screen appears
   hitsNeeded: 3,
-  withinMs: 1500,
+  /*
+   * Three seconds, because that is how people actually do this.
+   *
+   * It was 1500 ms, and the instrumentation caught what that meant: ten deliberate hits
+   * on the Today screen, every one of them accepted, and the window never held more than
+   * TWO at a time. The gaps were 1080, 1022, 1034, 1064, 1049, 1125, 998, 1036, 1034 —
+   * someone asked to hit a pad three times does it at about one per second, and three of
+   * those span two seconds, not one and a half. The gesture was arithmetically impossible
+   * to perform at the pace anyone performs it.
+   *
+   * Three hits inside three seconds is still far more specific than the two inside 2500 ms
+   * that used to fire by accident: it is the COUNT that makes it deliberate, and this
+   * asks for one more hit than that version did.
+   */
+  withinMs: 3000,
 }
