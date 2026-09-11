@@ -393,6 +393,16 @@ async function runWarmup () {
   let got = 0
   const off = onHits((hit) => {
     lastHitAt = hit.time
+    /*
+     * These count toward how hard she plays. Without them the drum-to-start and
+     * drum-to-continue shortcuts never arm on a fresh session: they refuse to guess at
+     * a threshold, and the only hits they had ever seen came from exercises that had
+     * not happened yet.
+     */
+    if (typeof hit.strength === 'number') {
+      state.hitStrengths.push(hit.strength)
+      if (state.hitStrengths.length > 120) state.hitStrengths.shift()
+    }
     if (got >= 4) return
     dots.children[got].classList.add('got')
     got++
@@ -447,6 +457,7 @@ let deafnessHandled = false
  */
 let micSilentSince = 0
 let reacquiring = false
+let micSilenceReported = false
 
 async function watchForSilentMic () {
   if (!mic || !mic.available || reacquiring) return
@@ -458,6 +469,22 @@ async function watchForSilentMic () {
   reacquiring = true
   micSilentSince = 0
   const ok = await mic.reacquire()
+  /*
+   * If it is still silent after a fresh stream, the microphone is being withheld rather
+   * than being quiet — most often Android's own microphone toggle, which hands apps
+   * silence instead of refusing them. Said once, and gently: the pad sensor is what
+   * scores her playing, and it works regardless.
+   */
+  if (!micSilenceReported) {
+    micSilenceReported = true
+    setTimeout(() => {
+      if (mic && !mic.receiving) {
+        toast(mic.muted || mic.permission === 'denied'
+          ? 'Microphone is switched off — the pad still works'
+          : 'I can’t hear anything through the microphone — the pad still works', 5000)
+      }
+    }, 2500)
+  }
   if (debug) console.warn('[drum-buddy] microphone delivered nothing; re-acquired:', ok)
   setTimeout(() => { reacquiring = false }, 3000)
   // Even if that fails she keeps playing: the pad sensor picks the exercise up.
@@ -743,6 +770,34 @@ function renderPlan () {
   })
 }
 
+/**
+ * Lay out the progress bar for today's session: one segment per step, weighted by how
+ * long that step actually takes, so the bar measures time rather than steps.
+ */
+function buildProgress () {
+  const host = $('progress')
+  host.innerHTML = ''
+  if (!state.plan) return
+  for (const step of state.plan.steps) {
+    const ex = byId(step.id)
+    const seconds = (step.bars * ex.beatsPerBar + SCHEDULER.countInBeats) * (60 / step.bpm)
+    const seg = document.createElement('i')
+    seg.style.setProperty('--w', seconds.toFixed(1))
+    host.append(seg)
+  }
+}
+
+/** @param {number} fraction how far through the current step, 0..1 */
+function updateProgress (fraction) {
+  const host = $('progress')
+  const segs = [...host.children]
+  segs.forEach((seg, i) => {
+    const fill = i < state.stepIndex ? 1 : i === state.stepIndex ? Math.max(0, Math.min(1, fraction)) : 0
+    seg.style.setProperty('--fill', fill.toFixed(3))
+    seg.classList.toggle('now', i === state.stepIndex)
+  })
+}
+
 function runStep () {
   const step = state.plan.steps[state.stepIndex]
   if (!step) return finishSession()
@@ -946,6 +1001,16 @@ function startExercise (index, step = null) {
 
   scheduler.start(ex, state.bpm)
 
+  if (state.step) {
+    buildProgress()
+    clearInterval(progressTimer)
+    const totalS = scheduler.totalBeats * beatS
+    progressTimer = setInterval(() => {
+      if (!scheduler.running) return
+      updateProgress((engine.audibleNow() - scheduler.startTime) / totalS)
+    }, 100)
+  }
+
   // The lanes need every note up front so they can fall into view ahead of time; the
   // scheduler works the whole exercise out when it starts.
   visuals.beatS = beatS
@@ -982,9 +1047,11 @@ function nudgeTempo (d) {
 }
 
 let calibWatch = null
+let progressTimer = null
 
 function stopPlay () {
   clearTimeout(calibWatch)
+  clearInterval(progressTimer)
   inSilentWindow = false
   scheduler.stop()
   visuals.stop()
@@ -1535,9 +1602,18 @@ function goFullscreen () {
   // a refusal is recorded rather than swallowed — "it doesn't work" was reported with
   // no way to see why.
   fullscreenNote = 'requested'
-  document.documentElement.requestFullscreen({ navigationUI: 'hide' })
-    .then(() => { fullscreenNote = 'granted' })
-    .catch((err) => { fullscreenNote = 'refused: ' + (err && err.name) })
+  // No options: navigationUI is advisory and some builds appear to choke on it.
+  const req = document.documentElement.requestFullscreen()
+  if (req && req.then) {
+    req.then(() => { fullscreenNote = 'granted' })
+      .catch((err) => { fullscreenNote = 'refused: ' + (err && err.name) })
+  }
+  // The promise has been seen never to settle at all, so check the actual outcome too.
+  setTimeout(() => {
+    if (fullscreenNote === 'requested') {
+      fullscreenNote = document.fullscreenElement ? 'granted (silent)' : 'ignored'
+    }
+  }, 1200)
 }
 
 let fullscreenNote = 'not tried'
@@ -1618,6 +1694,9 @@ function snapshot () {
       motionRest: motion ? motion.rest : null,
       corroboration: input ? input.corroborationRate : null,
       micReceiving: mic ? mic.receiving : null,
+      micMuted: mic ? mic.muted : null,
+      micPermission: mic ? mic.permission : null,
+      micTrackState: mic && mic.track ? mic.track.readyState : null,
       motionOffsetMs: input && input.motionOffsetS ? Math.round(input.motionOffsetS * 1000) : 0,
       motionDelayMs: Math.round(motionDelayS * 1000),
       tapDeltasMs,

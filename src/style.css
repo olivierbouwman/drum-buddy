@@ -669,3 +669,40 @@ button:focus-visible { outline: 4px solid #fff; outline-offset: 3px; }
 @media (max-height: 500px) {
   .note { height: 11px; }
 }
+
+/* ------------------------------------------------------- progress */
+
+/*
+ * How far through, along the very bottom edge.
+ *
+ * One segment per step of the session, each sized by how long it actually lasts, so the
+ * whole bar reads as time remaining rather than steps remaining. The current segment
+ * fills as she plays.
+ *
+ * At the edge of the screen on purpose: it answers "how much longer?" at a glance
+ * without competing with the lanes, which are the thing she should be watching.
+ */
+.progress {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; gap: 2px; height: 6px;
+  padding: 0 2px 2px;
+  pointer-events: none;
+}
+.progress i {
+  flex: var(--w, 1) 1 0;
+  background: #ffffff1a; border-radius: 3px; overflow: hidden;
+  position: relative;
+}
+.progress i::after {
+  content: ''; position: absolute; inset: 0;
+  transform-origin: left center;
+  transform: scaleX(var(--fill, 0));
+  background: var(--kraft);
+  transition: transform .12s linear;
+}
+/* The step she is on is brighter, so "now" is distinguishable from "done". */
+.progress i.now::after { background: var(--hot); box-shadow: 0 0 8px #ffc85788; }
+
+@media (max-height: 500px) {
+  .progress { height: 5px; }
+}

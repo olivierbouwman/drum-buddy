@@ -50,6 +50,25 @@ export class MicInput extends InputSource {
     }
 
     const track = this.stream.getAudioTracks()[0]
+    /*
+     * A track can be live, unmuted at the web level, and still deliver nothing.
+     *
+     * Android's system-wide microphone toggle hands apps SILENCE rather than refusing
+     * them, so getUserMedia succeeds, no error is raised, and every sample is a zero.
+     * Watching mute/unmute and the permission state is the only way to tell that apart
+     * from a genuinely quiet room.
+     */
+    this.track = track
+    track.addEventListener('mute', () => { this.muted = true; this.receiving = false })
+    track.addEventListener('unmute', () => { this.muted = false })
+    track.addEventListener('ended', () => { this.ended = true; this.receiving = false })
+    this.muted = track.muted
+    try {
+      const status = await navigator.permissions.query({ name: 'microphone' })
+      this.permission = status.state
+      status.onchange = () => { this.permission = status.state }
+    } catch { this.permission = 'unknown' }
+
     const s = track.getSettings ? track.getSettings() : {}
     this.processing = ['echoCancellation', 'noiseSuppression', 'autoGainControl']
       .filter((k) => s[k] === true)
@@ -88,9 +107,23 @@ export class MicInput extends InputSource {
       } else if (m.type === 'audio') {
         if (this._onAudio) { this._onAudio(m); this._onAudio = null }
       } else if (m.type === 'level') {
-        this.receiving = true
+        /*
+         * Buffers arriving is not the same as audio arriving.
+         *
+         * On the tablet the microphone reported itself available, with buffers flowing
+         * and no error, while every sample was a digital zero — so "receiving" was true
+         * and nothing was wrong as far as the app could tell. A stream of silence is a
+         * dead microphone wearing a healthy one's clothes.
+         */
         this.lastAudioAt = Date.now()
         this.level = m.peak
+        if (m.peak > 0) {
+          this.receiving = true
+          this.silentSince = 0
+        } else {
+          if (!this.silentSince) this.silentSince = Date.now()
+          if (Date.now() - this.silentSince > 3000) this.receiving = false
+        }
         this._onLevel(m.peak, m.levels)
       }
     }
